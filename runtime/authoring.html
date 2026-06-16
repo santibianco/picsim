@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>New Proteus — Diagram Authoring</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family:system-ui,sans-serif; background:#0d1117; color:#e6edf3; }
+  header { padding:14px 18px 6px; }
+  h1 { font-size:17px; margin:0; font-weight:600; }
+  .sub { color:#8b949e; font-size:13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 18px;
+    background:#161b22; border-bottom:1px solid #30363d; position:sticky; top:0; z-index:5; }
+  button, label.file { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:7px;
+    padding:6px 11px; font-size:13px; cursor:pointer; }
+  button:hover, label.file:hover { background:#30363d; }
+  button.primary { background:#238636; border-color:#2ea043; }
+  input[type=file]{ display:none; }
+  input[type=text]{ background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 8px; font-size:13px; }
+  .main { display:flex; gap:14px; padding:14px 18px; align-items:flex-start; flex-wrap:wrap; }
+  #board { background:#0a1f14; border:1px solid #30363d; border-radius:12px; }
+  .panel { flex:1; min-width:320px; display:flex; flex-direction:column; gap:10px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:9px; padding:10px 12px; }
+  .card h3 { margin:0 0 8px; font-size:13px; display:flex; justify-content:space-between; align-items:center; }
+  .row { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:12px; color:#8b949e; }
+  .row label { display:flex; gap:5px; align-items:center; }
+  select { background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:4px 6px; font-size:12px; }
+  .seg7 { display:grid; grid-template-columns:repeat(4,auto); gap:6px 12px; }
+  .del { background:#3d1418; border-color:#6e2329; color:#f0b0b4; padding:3px 8px; font-size:11px; }
+  textarea { width:100%; height:120px; background:#0d1117; color:#9fb6c9; border:1px solid #30363d;
+    border-radius:8px; font-family:ui-monospace,monospace; font-size:11px; padding:8px; box-sizing:border-box; }
+  .muted { color:#6e7681; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>New Proteus — Diagram Authoring</h1>
+  <div class="sub">Instructor tool: build a board, assign pins, export the diagram JSON students load.</div>
+</header>
+<div class="bar">
+  <span class="muted">Name</span>
+  <input id="name" type="text" value="My lab board" style="width:170px" oninput="setName(this.value)" />
+  <button onclick="addComp('led')">+ LED</button>
+  <button onclick="addComp('button')">+ Button</button>
+  <button onclick="addComp('sevenseg')">+ 7-seg</button>
+  <label class="file">Import JSON<input id="imp" type="file" accept=".json,application/json" /></label>
+  <button class="primary" onclick="exportJSON()">Export JSON</button>
+  <button onclick="copyJSON()">Copy</button>
+</div>
+<div class="main">
+  <canvas id="board" width="700" height="600"></canvas>
+  <div class="panel">
+    <div id="editor"></div>
+    <div class="card"><h3>Diagram JSON</h3><textarea id="json" readonly></textarea></div>
+  </div>
+</div>
+<script>
+"use strict";
+const PINS = ["RA0","RA1","RA2","RA3","RA4","RA5","RA6","RA7","RB0","RB1","RB2","RB3","RB4","RB5","RB6","RB7"];
+const SEG = ["a","b","c","d","e","f","g"];
+let diagram = { name:"My lab board", components:[
+  { type:"led", pin:"RB0", label:"LED" },
+] };
+
+// ---- chip geometry (DIP-18) ----
+const LEFT=["RA2","RA3","RA4","RA5","VSS","RB0","RB1","RB2","RB3"];
+const RIGHT=["RA1","RA0","RA7","RA6","VDD","RB7","RB6","RB5","RB4"];
+const CHIP={x:300,y:120,w:110,h:300}; const PIN={};
+(function(){ const p=(CHIP.h-44)/8; for(let i=0;i<9;i++){ const y=CHIP.y+22+i*p;
+  PIN[LEFT[i]]={x:CHIP.x-16,y,side:"L",num:i+1}; PIN[RIGHT[i]]={x:CHIP.x+CHIP.w+16,y,side:"R",num:18-i}; } })();
+
+// ---- drawing ----
+const cv=document.getElementById("board"), ctx=cv.getContext("2d");
+function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function wire(a,b,c,d){ ctx.strokeStyle="#3a6b4f"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(a,b); ctx.lineTo(c,d); ctx.stroke(); }
+function chip(){
+  ctx.fillStyle="#15191f"; ctx.strokeStyle="#454d57"; ctx.lineWidth=2; rr(CHIP.x,CHIP.y,CHIP.w,CHIP.h,8); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(CHIP.x+CHIP.w/2,CHIP.y+8,9,0,Math.PI); ctx.fillStyle="#0a1f14"; ctx.fill();
+  ctx.fillStyle="#c9d1d9"; ctx.font="bold 12px system-ui"; ctx.textAlign="center";
+  ctx.fillText("PIC16F628A",CHIP.x+CHIP.w/2,CHIP.y+CHIP.h/2-4);
+  ctx.fillStyle="#6e7681"; ctx.font="10px system-ui"; ctx.fillText("DIP-18",CHIP.x+CHIP.w/2,CHIP.y+CHIP.h/2+10);
+  ctx.font="10px ui-monospace,monospace";
+  for(const n in PIN){ const p=PIN[n], io=/^R[AB]/.test(n);
+    ctx.strokeStyle="#8b949e"; ctx.lineWidth=2.5; ctx.beginPath();
+    ctx.moveTo(p.side==="L"?CHIP.x:CHIP.x+CHIP.w,p.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    ctx.fillStyle=io?"#9fb6c9":"#6e7681"; ctx.textAlign=p.side==="L"?"end":"start";
+    ctx.fillText(n,p.side==="L"?p.x-4:p.x+4,p.y+3); }
+}
+function led(x,y,lbl){ ctx.save(); ctx.beginPath(); ctx.arc(x,y,15,0,6.29);
+  ctx.fillStyle="rgba(255,90,70,0.6)"; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle="#30363d"; ctx.stroke(); ctx.restore();
+  ctx.fillStyle="#8b949e"; ctx.font="10px ui-monospace,monospace"; ctx.textAlign="center"; ctx.fillText(lbl,x,y+28); }
+function seven(x,y,litpins,pa,pb){ const W=92,H=140,t=14;
+  const s=[[x+t,y,W-2*t,t],[x+W-t,y+t,t,H/2-t],[x+W-t,y+H/2,t,H/2-t],[x+t,y+H-t,W-2*t,t],
+           [x,y+H/2,t,H/2-t],[x,y+t,t,H/2-t],[x+t,y+H/2-t/2,W-2*t,t]];
+  ctx.save(); ctx.fillStyle="#070d09"; ctx.strokeStyle="#30363d"; ctx.lineWidth=1; rr(x-12,y-12,W+24,H+24,9); ctx.fill(); ctx.stroke();
+  for(let i=0;i<7;i++){ ctx.fillStyle=litpins[i]?"rgba(255,70,60,0.6)":"rgba(255,70,60,0.08)"; const r=s[i]; ctx.fillRect(r[0],r[1],r[2],r[3]); }
+  ctx.restore(); }
+function btn(x,y,lbl){ ctx.save(); ctx.fillStyle="#21262d"; ctx.strokeStyle="#30363d"; ctx.lineWidth=2; rr(x,y,68,40,8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#e6edf3"; ctx.font="11px ui-monospace,monospace"; ctx.textAlign="center"; ctx.fillText(lbl,x+34,y+24); ctx.restore(); }
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height); chip();
+  const segs=diagram.components.filter(c=>c.type==="sevenseg");
+  const segW=92,gap=30, sx=(cv.width-(segs.length*segW+Math.max(0,segs.length-1)*gap))/2; let si=0;
+  for(const c of diagram.components){
+    if(c.type==="led"){ const p=PIN[c.pin]; if(!p){continue;} const d=p.side==="R"?1:-1; const x=p.x+d*55;
+      wire(p.x,p.y,x,p.y); led(x,p.y,c.label||c.pin); }
+    else if(c.type==="button"){ const p=PIN[c.pin]; if(!p){continue;} const d=p.side==="R"?1:-1; const x=p.x+d*70-(d<0?68:0);
+      wire(p.x,p.y,d<0?x+68:x,p.y); btn(x,p.y-20,c.label||c.pin); }
+    else if(c.type==="sevenseg"){ const px=sx+(si++)*(segW+gap), py=430;
+      c.pins.forEach((pn,k)=>{ const p=PIN[pn]; if(p) wire(p.x,p.y,px+10+k*11,py); });
+      seven(px,py,c.pins.map(p=>!!p)); }
+  }
+  document.getElementById("json").value=JSON.stringify(diagram,null,2);
+}
+
+// ---- editor ----
+function opts(sel){ return ['<option value="">—</option>'].concat(PINS.map(p=>`<option ${p===sel?"selected":""}>${p}</option>`)).join(""); }
+function card(c,i){
+  let body="";
+  if(c.type==="led"||c.type==="button"){
+    body=`<div class="row"><label>Pin <select onchange="setF(${i},'pin',this.value)">${opts(c.pin)}</select></label>
+      <label>Label <input type="text" value="${c.label||""}" oninput="setF(${i},'label',this.value)" style="width:110px"></label>
+      <label><input type="checkbox" ${c.activeLow?"checked":""} onchange="setF(${i},'activeLow',this.checked)"> active-low (pressed = 0)</label></div>`;
+  } else if(c.type==="sevenseg"){
+    const segSel=SEG.map((s,k)=>`<label>${s} <select onchange="setSeg(${i},${k},this.value)">${opts(c.pins[k])}</select></label>`).join("");
+    body=`<div class="seg7">${segSel}</div>
+      <div class="row" style="margin-top:8px">
+      <label>Common <select onchange="setF(${i},'common',this.value)">${opts(c.common)}</select></label>
+      <label><input type="checkbox" ${c.commonActiveLow?"checked":""} onchange="setF(${i},'commonActiveLow',this.checked)"> common active-low</label>
+      <label>Label <input type="text" value="${c.label||""}" oninput="setF(${i},'label',this.value)" style="width:100px"></label></div>`;
+  }
+  return `<div class="card"><h3>${c.type.toUpperCase()} #${i+1}<button class="del" onclick="delComp(${i})">delete</button></h3>${body}</div>`;
+}
+function renderEditor(){ document.getElementById("editor").innerHTML =
+  diagram.components.length ? diagram.components.map(card).join("") : '<div class="card muted">No components yet — add one above.</div>'; }
+function refresh(){ renderEditor(); draw(); }
+
+function addComp(type){
+  const def = type==="led" ? {type:"led",pin:"RB0",label:"LED"}
+    : type==="button" ? {type:"button",pin:"RA4",activeLow:true,label:"Button"}
+    : {type:"sevenseg",pins:["RB0","RB1","RB2","RB3","RB4","RB5","RB6"],common:"RA0",commonActiveLow:false,label:"Digit"};
+  diagram.components.push(def); refresh();
+}
+function delComp(i){ diagram.components.splice(i,1); refresh(); }
+function setF(i,f,v){ diagram.components[i][f]=v; draw(); if(f==="pin"){ /* labels unaffected */ } }
+function setSeg(i,k,v){ diagram.components[i].pins[k]=v; draw(); }
+
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(diagram,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=(diagram.name||"diagram").replace(/[^a-z0-9]+/gi,"_").toLowerCase()+".json"; a.click();
+}
+function copyJSON(){ navigator.clipboard && navigator.clipboard.writeText(JSON.stringify(diagram,null,2)); }
+function setName(v){ diagram.name=v; draw(); }
+document.getElementById("imp").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ const d=JSON.parse(await f.text()); if(!Array.isArray(d.components)) throw new Error("no components[]");
+    diagram=d; if(!diagram.name) diagram.name="Imported board"; document.getElementById("name").value=diagram.name; refresh();
+  }catch(err){ alert("Bad diagram: "+err); }
+});
+
+refresh();
+</script>
+</body>
+</html>

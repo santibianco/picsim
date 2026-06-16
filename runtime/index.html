@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0d1117" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/svg+xml" href="icon.svg" />
+<title>New Proteus — PIC16F628A simulator</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3;
+    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .sub { color: #8b949e; font-size: 13px; margin-top: -8px; }
+  .panel {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 10px 14px;
+  }
+  button, label.file {
+    background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 7px;
+    padding: 7px 12px; font-size: 13px; cursor: pointer;
+  }
+  button:hover, label.file:hover { background: #30363d; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=file] { display: none; }
+  #board { background: #0a1f14; border: 1px solid #30363d; border-radius: 12px; width: 920px; max-width: 100%; height: auto; aspect-ratio: 920 / 640; }
+  .status { font-size: 12px; color: #8b949e; font-family: ui-monospace, monospace; }
+  .ok { color: #3fb950; } .err { color: #f85149; }
+  .speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8b949e; }
+  #wasmWrap.hidden { display: none; }
+</style>
+</head>
+<body>
+  <h1>New Proteus</h1>
+  <div class="sub">Browser PIC16F628A simulator — cycle-accurate Rust core (WASM)</div>
+
+  <div class="panel">
+    <span id="wasmWrap"><label class="file">Load core (.wasm)<input id="wasmFile" type="file" accept=".wasm" /></label></span>
+    <label class="file">Load firmware (.hex)<input id="hexFile" type="file" accept=".hex" /></label>
+    <label class="file">Load diagram (.json)<input id="diagFile" type="file" accept=".json,application/json" /></label>
+    <button id="demoBtn" disabled>Blink demo</button>
+    <button id="segBtn" disabled>7-seg demo</button>
+    <button id="muxBtn" disabled>2-digit demo</button>
+    <button id="eeBtn" disabled>EEPROM demo</button>
+    <button id="runBtn" disabled>Run</button>
+    <button id="resetBtn" disabled>Reset</button>
+    <div class="speed">Clock
+      <input id="clock" type="text" value="4 MHz" style="width:88px; background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 8px; font-family:ui-monospace,monospace" />
+      <span id="clockVal" class="status ok">4,000,000 Hz</span>
+    </div>
+  </div>
+
+  <canvas id="board" width="920" height="640"></canvas>
+  <div id="status" class="status">Loading core…</div>
+
+<!-- Optional embedded core: `core-wasm.js` defines window.NP_WASM_BASE64 so the
+     page is self-contained and you only pick a .hex. Missing file is harmless. -->
+<script src="core-wasm.js" onerror="window.__npNoEmbed=true"></script>
+<script>
+"use strict";
+
+// ===== two demo boards =====
+const LED_DIAGRAM = {
+  components: [
+    ...Array.from({ length: 8 }, (_, i) => ({ type: "led", pin: "RB" + i })),
+    { type: "button", pin: "RA4", activeLow: true },
+  ],
+};
+const SEG_DIAGRAM = {
+  components: [ { type: "sevenseg", pins: ["RB0","RB1","RB2","RB3","RB4","RB5","RB6"], common: null } ],
+};
+const BLINK_HEX = ":0A000000831686018312860A032886\n:00000001FF\n";
+const SEG_COUNTER_HEX =
+  ":10000000831686018312A00120080E208600192085\n" +
+  ":10001000A00A0A3020020319A001042882073F34F5\n" +
+  ":1000200006345B344F3466346D347D3407347F34AA\n" +
+  ":100030006F34FF30A100FF30A200A20B1D28A10BDE\n" +
+  ":040040001B28080071\n" +
+  ":00000001FF\n";
+const LAB_DIAGRAM = { name:"Two-digit counter", components:[
+  {type:"led", pin:"RB7", label:"Status"},
+  {type:"button", pin:"RA4", activeLow:true, label:"SW1"},
+  {type:"sevenseg", pins:["RB0","RB1","RB2","RB3","RB4","RB5","RB6"], common:"RA1", commonActiveLow:false},
+  {type:"sevenseg", pins:["RB0","RB1","RB2","RB3","RB4","RB5","RB6"], common:"RA0", commonActiveLow:false},
+]};
+const MUX_COUNTER_HEX =
+  ":1000000083168601FC308500831207309F0085012E\n" +
+  ":100010008601A001A101A201A301850120082E20D3\n" +
+  ":10002000860005143920850121082E2086008514BC\n" +
+  ":100030003920A20F0D28A30A03302302031D0D2827\n" +
+  ":10004000A301A00A0A302002031D0D28A001A10A65\n" +
+  ":100050000A302102031D0D28A1010D2882073F341B\n" +
+  ":1000600006345B344F3466346D347D3407347F346A\n" +
+  ":0C0070006F344030A400A40B3B280800B3\n" +
+  ":00000001FF\n";
+const EEPROM_COUNTER_HEX =
+  ":10000000831686019B011C141A08F00083120A3023\n" +
+  ":1000100070020318F001F00A0A3070020319F001AF\n" +
+  ":1000200083169B0170089A001C1555309D00AA305C\n" +
+  ":100030009D009C14831270081F2086001B288207D5\n" +
+  ":100040003F3406345B344F3466346D347D340734CA\n" +
+  ":040050007F346F3456\n" +
+  ":00000001FF\n";
+
+// ===== PIC16F628A DIP-18 pinout (pin 1 top-left, down the left, up the right) =====
+const LEFT = ["RA2","RA3","RA4","RA5","VSS","RB0","RB1","RB2","RB3"];      // pins 1..9
+const RIGHT = ["RA1","RA0","RA7","RA6","VDD","RB7","RB6","RB5","RB4"];     // pins 18..10
+const CHIP = { x: 410, y: 120, w: 110, h: 300 };
+const PIN = {};
+(function () {
+  const pitch = (CHIP.h - 44) / 8;
+  for (let i = 0; i < 9; i++) {
+    const y = CHIP.y + 22 + i * pitch;
+    PIN[LEFT[i]] = { x: CHIP.x - 16, y, side: "L", num: i + 1 };
+    PIN[RIGHT[i]] = { x: CHIP.x + CHIP.w + 16, y, side: "R", num: 18 - i };
+  }
+})();
+
+// ===== wasm glue =====
+let X = null, MEM = null;
+const enc = new TextEncoder();
+function pinIndex(n){ const m=/^R([AB])([0-7])$/.exec(n||""); return m?(m[1]==="B"?8:0)+(+m[2]):-1; }
+function pinVal(n,pa,pb){ const i=pinIndex(n); if(i<0)return 0; return i<8?(pa>>i)&1:(pb>>(i-8))&1; }
+async function instantiate(bytes){ const {instance}=await WebAssembly.instantiate(bytes,{}); X=instance.exports; MEM=X.memory; }
+function loadHex(text){
+  const d=enc.encode(text);
+  if(d.length>X.np_hex_buffer_len()) return false;
+  new Uint8Array(MEM.buffer, X.np_hex_buffer(), d.length).set(d);
+  return X.np_load_hex(d.length)===1;
+}
+function b64ToBytes(b64){ const s=atob(b64),a=new Uint8Array(s.length); for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i); return a; }
+
+// ===== components (sub-frame sampled for honest multiplexing) =====
+function build(diagram){
+  const segCount=diagram.components.filter(c=>c.type==="sevenseg").length;
+  const segW=110, segGap=42, segStartX=(920-(segCount*segW+Math.max(0,segCount-1)*segGap))/2;
+  let si=0;
+  return diagram.components.map((c)=>{
+    if(c.type==="led"){
+      const p=PIN[c.pin]||{x:CHIP.x,y:CHIP.y}; const dir=p.side==="R"?1:-1;
+      const pos={x:p.x+dir*62, y:p.y}; const wire=[p.x,p.y,pos.x,pos.y];
+      return {on:0,n:0,reset(){this.on=0;this.n=0;},
+        sample(pa,pb){ const lit=c.activeLow?pinVal(c.pin,pa,pb)===0:pinVal(c.pin,pa,pb)===1; if(lit)this.on++; this.n++; },
+        draw(ctx){ trace(ctx,wire); drawLed(ctx,pos.x,pos.y,this.n?this.on/this.n:0,c.label||c.pin); } };
+    }
+    if(c.type==="sevenseg"){
+      const pos={x: segStartX + (si++)*(segW+segGap), y:455};
+      const wires=c.pins.map((pn,i)=>{ const p=PIN[pn]||pos; return [p.x,p.y,pos.x+12+i*13,pos.y]; });
+      const cp=c.common?PIN[c.common]:null; const cwire=cp?[cp.x,cp.y,pos.x+segW/2,pos.y+160]:null;
+      return {seg:[0,0,0,0,0,0,0],n:0,reset(){this.seg=[0,0,0,0,0,0,0];this.n=0;},
+        sample(pa,pb){ this.n++; const sel=c.common?(c.commonActiveLow?pinVal(c.common,pa,pb)===0:pinVal(c.common,pa,pb)===1):true;
+          if(sel) for(let i=0;i<7;i++) if(pinVal(c.pins[i],pa,pb)===1) this.seg[i]++; },
+        draw(ctx){ for(const w of wires) trace(ctx,w); if(cwire) trace(ctx,cwire); drawSeven(ctx,pos.x,pos.y,this.seg.map((s)=>this.n?s/this.n:0)); } };
+    }
+    if(c.type==="button"){
+      const p=PIN[c.pin]||{x:CHIP.x,y:CHIP.y}; const dir=p.side==="R"?1:-1;
+      const pos={x:p.x+dir*80-(dir<0?72:0), y:p.y-22}; const wire=[p.x,p.y,(p.side==="R"?pos.x:pos.x+72),pos.y+22];
+      return {pressed:false,reset(){},sample(){},
+        idle(){ if(X) X.np_set_pin(pinIndex(c.pin), c.activeLow?1:0); },
+        press(v){ this.pressed=v; if(X) X.np_set_pin(pinIndex(c.pin), (v?!c.activeLow:c.activeLow)?1:0); },
+        hit(mx,my){ return mx>=pos.x&&mx<=pos.x+72&&my>=pos.y&&my<=pos.y+44; },
+        draw(ctx){ trace(ctx,wire); drawButton(ctx,pos.x,pos.y,this.pressed,c.label||c.pin); } };
+    }
+    return {reset(){},sample(){},draw(){}};
+  });
+}
+
+// ===== drawing =====
+function trace(ctx,w){ ctx.strokeStyle="#3a6b4f"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(w[0],w[1]); ctx.lineTo(w[2],w[3]); ctx.stroke(); }
+function drawChip(ctx){
+  ctx.fillStyle="#15191f"; ctx.strokeStyle="#454d57"; ctx.lineWidth=2;
+  roundRect(ctx,CHIP.x,CHIP.y,CHIP.w,CHIP.h,8); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(CHIP.x+CHIP.w/2,CHIP.y+8,9,0,Math.PI); ctx.fillStyle="#0a1f14"; ctx.fill();
+  ctx.fillStyle="#c9d1d9"; ctx.font="bold 13px system-ui"; ctx.textAlign="center";
+  ctx.save(); ctx.translate(CHIP.x+CHIP.w/2,CHIP.y+CHIP.h/2); ctx.fillText("PIC16F628A",0,-6);
+  ctx.fillStyle="#6e7681"; ctx.font="11px system-ui"; ctx.fillText("DIP-18",0,12); ctx.restore();
+  ctx.font="10px ui-monospace, monospace";
+  for(const name in PIN){
+    const p=PIN[name], isIo=/^R[AB]/.test(name);
+    ctx.strokeStyle="#8b949e"; ctx.lineWidth=2.5; ctx.beginPath();
+    ctx.moveTo(p.side==="L"?CHIP.x:CHIP.x+CHIP.w,p.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    ctx.fillStyle=isIo?"#9fb6c9":"#6e7681"; ctx.textAlign=p.side==="L"?"end":"start";
+    ctx.fillText(name, p.side==="L"?p.x-4:p.x+4, p.y+3);
+    ctx.fillStyle="#586069"; ctx.textAlign="center";
+    ctx.fillText(p.num, p.side==="L"?CHIP.x+12:CHIP.x+CHIP.w-12, p.y+3);
+  }
+}
+function drawLed(ctx,x,y,b,label){
+  ctx.save(); ctx.beginPath(); ctx.arc(x,y,15,0,Math.PI*2);
+  const g=ctx.createRadialGradient(x,y,2,x,y,15);
+  g.addColorStop(0,`rgba(255,90,70,${0.22+0.78*b})`); g.addColorStop(1,`rgba(110,18,18,${0.35+0.4*b})`);
+  ctx.fillStyle=g; if(b>0.05){ctx.shadowColor="rgba(255,90,70,0.85)";ctx.shadowBlur=16*b;} ctx.fill();
+  ctx.shadowBlur=0; ctx.lineWidth=2; ctx.strokeStyle="#30363d"; ctx.stroke(); ctx.restore();
+  ctx.fillStyle="#8b949e"; ctx.font="10px ui-monospace, monospace"; ctx.textAlign="center"; ctx.fillText(label,x,y+28);
+}
+function drawSeven(ctx,x,y,b){
+  const W=110,H=160,t=16;
+  const s=[[x+t,y,W-2*t,t],[x+W-t,y+t,t,H/2-t],[x+W-t,y+H/2,t,H/2-t],[x+t,y+H-t,W-2*t,t],
+           [x,y+H/2,t,H/2-t],[x,y+t,t,H/2-t],[x+t,y+H/2-t/2,W-2*t,t]];
+  ctx.save(); ctx.fillStyle="#070d09"; ctx.strokeStyle="#30363d"; ctx.lineWidth=1;
+  roundRect(ctx,x-14,y-14,W+28,H+28,10); ctx.fill(); ctx.stroke();
+  for(let i=0;i<7;i++){ const v=b[i]; ctx.fillStyle=`rgba(255,70,60,${0.05+0.95*v})`;
+    ctx.shadowColor="rgba(255,70,60,0.9)"; ctx.shadowBlur=v>0.05?12*v:0; const r=s[i]; ctx.fillRect(r[0],r[1],r[2],r[3]); }
+  ctx.restore();
+}
+function drawButton(ctx,x,y,pressed,label){
+  ctx.save(); ctx.fillStyle=pressed?"#2ea043":"#21262d"; ctx.strokeStyle="#30363d"; ctx.lineWidth=2;
+  roundRect(ctx,x,y,72,44,9); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#e6edf3"; ctx.font="12px ui-monospace, monospace"; ctx.textAlign="center";
+  ctx.fillText(label,x+36,y+22); ctx.fillStyle="#8b949e"; ctx.font="9px ui-monospace, monospace";
+  ctx.fillText("hold",x+36,y+36); ctx.restore();
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+// ===== loop =====
+const canvas=document.getElementById("board"), ctx=canvas.getContext("2d"), statusEl=document.getElementById("status");
+let components=build(LED_DIAGRAM), running=false;
+const SUBSTEPS=64;
+let clockHz=4000000;
+let cycleBudget=0; // carries fractional cycles so low clocks run < 1 cycle/frame
+function frame(){
+  if(running&&X){
+    cycleBudget += clockHz/4/60;          // instruction cycles due this frame (may be < 1)
+    let want=Math.floor(cycleBudget); cycleBudget-=want;
+    if(want>2000000) want=2000000;        // cap so an absurd clock can't freeze the tab
+    if(want>0){
+      const steps=Math.min(SUBSTEPS,want), per=Math.max(1,Math.floor(want/steps));
+      for(const c of components) c.reset();
+      let ran=0;
+      for(let s=0;s<steps;s++){ X.np_run_cycles(per); ran+=per; const pa=X.np_read_porta(),pb=X.np_read_portb(); for(const c of components) c.sample(pa,pb); }
+      if(ran<want) X.np_run_cycles(want-ran);
+    }
+  }
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawChip(ctx);
+  for(const c of components) c.draw(ctx);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ===== controls =====
+function setStatus(m,c){ statusEl.innerHTML=m; statusEl.className="status "+(c||""); }
+function enable(ids,on){ ids.forEach((id)=>document.getElementById(id).disabled=!on); }
+function coreReady(){ enable(["demoBtn","segBtn","muxBtn","eeBtn"],true); }
+function setDiagram(d){ components=build(d); }
+function afterHex(ok,name){ if(!ok){ setStatus("Failed to parse "+name,"err"); return; }
+  X.np_reset(); for(const c of components) if(c.idle) c.idle();
+  enable(["runBtn","resetBtn"],true);
+  running=true; document.getElementById("runBtn").textContent="Pause";
+  setStatus("Loaded "+name+" ✓ — running.","ok"); }
+
+document.getElementById("wasmFile").addEventListener("change", async (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ await instantiate(await f.arrayBuffer()); coreReady(); setStatus("Core loaded ✓ — pick a demo or a .hex.","ok"); }
+  catch(err){ setStatus("WASM load failed: "+err,"err"); }
+});
+document.getElementById("hexFile").addEventListener("change", async (e)=>{ const f=e.target.files[0]; if(!f||!X) return; afterHex(loadHex(await f.text()),f.name); });
+document.getElementById("diagFile").addEventListener("change", async (e)=>{ const f=e.target.files[0]; if(!f) return;
+  try{ const d=JSON.parse(await f.text()); if(!d||!Array.isArray(d.components)) throw new Error("missing components[]");
+    setDiagram(d); if(d.clock_hz) setClock(d.clock_hz+" Hz"); for(const c of components) if(c.idle) c.idle();
+    setStatus("Loaded diagram: "+(d.name||f.name)+" ✓ — now load a .hex for it.","ok");
+  }catch(err){ setStatus("Bad diagram: "+err,"err"); } });
+function setClock(str){ document.getElementById("clock").value=str; applyClock(); }
+document.getElementById("demoBtn").addEventListener("click", ()=>{ if(X){ setClock("1 kHz"); setDiagram(LED_DIAGRAM); afterHex(loadHex(BLINK_HEX),"blink demo"); } });
+document.getElementById("segBtn").addEventListener("click", ()=>{ if(X){ setClock("4 MHz"); setDiagram(SEG_DIAGRAM); afterHex(loadHex(SEG_COUNTER_HEX),"7-seg counter"); } });
+document.getElementById("muxBtn").addEventListener("click", ()=>{ if(X){ setClock("4 MHz"); setDiagram(LAB_DIAGRAM); afterHex(loadHex(MUX_COUNTER_HEX),"2-digit counter"); } });
+document.getElementById("eeBtn").addEventListener("click", ()=>{ if(X){ setClock("4 MHz"); setDiagram(SEG_DIAGRAM); afterHex(loadHex(EEPROM_COUNTER_HEX),"EEPROM counter"); setStatus("EEPROM demo ✓ — press Reset to power-cycle; the count survives.","ok"); } });
+document.getElementById("runBtn").addEventListener("click", ()=>{ running=!running; document.getElementById("runBtn").textContent=running?"Pause":"Run"; });
+document.getElementById("resetBtn").addEventListener("click", ()=>{ X.np_reset(); for(const c of components) if(c.idle) c.idle(); });
+function parseClock(s){ s=(s||"").trim().toLowerCase().replace(/hz$/,"").trim(); const m=/^([0-9]*\.?[0-9]+)\s*([kmg]?)$/.exec(s); if(!m)return null; const mult={k:1e3,m:1e6,g:1e9}[m[2]]||1; return Math.round(parseFloat(m[1])*mult); }
+function applyClock(){ const v=parseClock(document.getElementById("clock").value); const el=document.getElementById("clockVal");
+  if(v&&v>0){ clockHz=v; if(X)X.np_set_clock_hz(v); el.textContent=v.toLocaleString()+" Hz"; el.className="status ok"; }
+  else { el.textContent="invalid"; el.className="status err"; } }
+document.getElementById("clock").addEventListener("input", applyClock);
+applyClock();
+
+function canvasPos(e){ const r=canvas.getBoundingClientRect(); return [(e.clientX-r.left)*canvas.width/r.width,(e.clientY-r.top)*canvas.height/r.height]; }
+canvas.addEventListener("mousedown",(e)=>{ const [mx,my]=canvasPos(e); for(const c of components) if(c.hit&&c.hit(mx,my)) c.press(true); });
+window.addEventListener("mouseup", ()=>{ for(const c of components) if(c.press) c.press(false); });
+
+// ===== embedded-core auto-load =====
+window.addEventListener("DOMContentLoaded", async ()=>{
+  if(window.NP_WASM_BASE64){
+    try{ await instantiate(b64ToBytes(window.NP_WASM_BASE64)); coreReady();
+      document.getElementById("wasmWrap").classList.add("hidden");
+      setStatus("Core ready ✓ — pick a demo (Blink / 7-seg) or load a .hex.","ok"); return;
+    }catch(err){ setStatus("Embedded core failed: "+err,"err"); }
+  }
+  setStatus("Load the core (.wasm) to begin — or embed it (see runtime/README.md).");
+});
+
+// PWA: register the service worker (offline + installable). Needs https or localhost.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>

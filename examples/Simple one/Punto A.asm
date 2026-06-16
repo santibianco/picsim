@@ -1,0 +1,19 @@
+		#include <p16f628a.inc>
+		
+		__CONFIG 	3F10
+		
+		ORG		0x00	
+		GOTO	INICIO	
+		ORG		0X04
+
+INICIO
+		BANKSEL TRISB
+		CLRF	TRISB
+		BANKSEL	PORTB
+
+		MOVLW	0xFF
+		MOVWF	PORTB
+		
+		GOTO	$
+
+		END

@@ -1,0 +1,188 @@
+# Architecture — Timing Model & Core Interface
+
+This is the load-bearing spec. The CPU core, the cycle-accounting loop, and the
+frame-sampling model described here are the ~20% of the project that everything else
+depends on. Get this right and the components and UI are mostly mechanical. Get it
+wrong and the whole thing feels flaky in exactly the way SimulIDE does.
+
+---
+
+## 1. Time model: cycles are the master clock
+
+The simulation's notion of time is **instruction cycles**, counted by the core. Nothing
+else is authoritative. In particular, **the render loop must never drive the
+simulation** — it only samples whatever the core has already computed.
+
+### 16F628A timing facts
+- Every instruction takes **1 instruction cycle**, **except** branches and skips-when-
+  taken, which take **2**.
+- **1 instruction cycle = 4 oscillator clocks.**
+- At the default **4 MHz** internal oscillator: **1 instruction cycle = 1 µs.**
+- No pipeline stalls, no cache, no variable memory latency. Cycle count is exact by
+  construction.
+
+### Derived constants (do NOT hardcode the 1µs)
+Store the clock as a variable so the "any clock value" nice-to-have comes for free:
+
+```
+clock_hz            = 4_000_000          // default; make this settable
+cycles_per_second   = clock_hz / 4       // instruction cycles per second
+cycles_per_frame    = clock_hz / 4 / 60  // ≈ 16,667 at 4 MHz, 60 fps
+```
+
+The CPU core itself is **clock-agnostic** — it just counts cycles. Clock speed only
+matters when converting simulated cycles to wall-clock time for (a) the render cadence
+and (b) timer ticks. So supporting a variable clock is just changing `clock_hz`; never
+bake `1 cycle = 1 µs` into the core.
+
+---
+
+## 2. The run loop
+
+Each animation frame (~60 fps), JS asks the core to advance one frame's worth of
+*simulated* time, then samples and draws:
+
+```
+function frame() {
+  core.runCycles(cyclesPerFrame);   // run ~16,667 cycles of firmware
+  const pins = core.readPins();     // sample resulting pin state
+  render(pins, core.segmentOnTime); // draw (see §4 for 7-seg)
+  requestAnimationFrame(frame);
+}
+```
+
+Within that single `runCycles` call the firmware may execute thousands of instructions
+and switch a multiplexed display dozens of times. That is the whole point: the core
+resolves all the fast timing internally, and JS only looks once per frame.
+
+### Inside `runCycles(n)` — correct ordering per step
+For each instruction executed, in this order:
+
+1. **Fetch** instruction at PC from program memory.
+2. **Decode** to one of the ~35 PIC14 operations.
+3. **Execute**: mutate W / file registers / STATUS flags; update PC (branches add a cycle).
+4. **Advance `cycle_count`** by the instruction's cycle cost (1 or 2).
+5. **Tick TMR0** according to how many cycles elapsed, respecting the prescaler
+   (see §3). This may set the TMR0 overflow flag (T0IF).
+6. **Check interrupts**: if GIE set and an enabled+flagged source is pending
+   (T0IF, INTF for RB0/INT, RBIF for PORTB-change), push the return address and
+   vector to the ISR.
+7. Continue until the requested cycle budget `n` is consumed.
+
+Keep accumulating any cycle remainder across frames so timing doesn't slowly drift
+(don't truncate `cycles_per_frame` to an int and lose the fraction every frame).
+
+---
+
+## 3. Peripherals required even in digital-only mode
+
+Digital-only removes analog, but these peripherals are unavoidable because LED/button/
+display firmware uses them constantly:
+
+- **PORTA / PORTB** with **TRISA / TRISB** direction registers — the I/O surface.
+  A pin driven as output reflects the latch value; a pin set as input reads the
+  externally-driven value (from a button component).
+- **TMR0 + prescaler** — almost all timing/delay/multiplex code uses it. Implement the
+  prescaler assignment (shared with WDT via OPTION_REG) and the T0IF overflow flag.
+- **RB0/INT external interrupt (INTF)** — common with buttons.
+- **PORTB interrupt-on-change (RBIF)** — common with buttons.
+
+### Can be stubbed initially
+The comparators, USART, CCP/PWM module, and EEPROM are rarely touched by LED/button/
+display labs. Stub them (reads return sane defaults, writes accepted/ignored) and
+implement later only if a lab needs them.
+
+### Memory / CPU correctness points that need care (not difficulty, just precision)
+- **Bank switching** via RP0/RP1 in STATUS (the 16F628A uses banked SFR/RAM access).
+- **Indirect addressing** through FSR/INDF.
+- **W and STATUS flag interactions** — Z, C, DC must be set correctly per instruction.
+- **PCL / PCLATH paging** on computed jumps (`ADDWF PCL`, etc.).
+
+These are the spots where naive emulators go subtly wrong. Cover them with tests (§5).
+
+---
+
+## 4. 7-segment rendering: persistence of vision
+
+A multiplexed display switches digits **many times within one rendered frame**. If you
+naively snapshot pin state once at frame end, you'll catch a single digit lit and the
+rest dark — showing flicker a human eye would never see on real hardware. That's a bug
+that makes correct student code look broken.
+
+**Solution — accumulate per-segment on-time across the frame.** As the core runs the
+frame's cycles, track how long each digit/segment was actually driven. At frame end,
+render brightness proportional to on-time:
+
+- A digit lit for 1/4 of the frame renders at ~25% brightness.
+- This *correctly* reproduces persistence of vision.
+- It also surfaces real bugs: a display that's too dim because the student's refresh
+  duty cycle is wrong will actually look dim, which is pedagogically valuable.
+
+Implementation: the core (or a thin layer over it) maintains an on-time accumulator per
+segment, reset at the start of each frame and integrated as pin states change during
+`runCycles`. JS reads these accumulators when rendering.
+
+**Simpler fallback** (if you want to defer PoV): sample pin state at sub-frame intervals
+(e.g. every ~1 ms of simulated time) and OR the results. Less accurate — no brightness
+gradation — but easy. Prefer the on-time model; it's not much more work and it's honest.
+
+---
+
+## 5. The core's public interface (WASM exports)
+
+Keep the surface tiny. Everything hangs off these:
+
+| Function | Purpose |
+|---|---|
+| `loadHex(text)` | Parse Intel HEX (from MPLAB) into program memory; reset the CPU. |
+| `runCycles(n)` | Execute until `n` instruction cycles are consumed (see §2). |
+| `readPins()` | Return current logical state of all I/O pins. |
+| `setPin(pin, level)` | Externally drive an input pin — used for button presses. |
+| `reset()` | Power-on reset: clear registers, reset PC and SFRs to POR values. |
+| `setClockHz(hz)` | Optional: change clock; only affects cycle→wall-clock conversion. |
+
+For 7-seg PoV, also expose the per-segment on-time accumulators (e.g.
+`segmentOnTime()` returning the integrated on-times since the last frame, and a
+`resetFrameAccumulators()` called at frame start) — or fold that into `runCycles`
+returning the accumulated data. Exact shape is an implementation choice; the
+*requirement* is that JS can render brightness from on-time.
+
+### Input format
+Firmware enters as **Intel HEX**, which MPLAB already produces. Parse HEX records into
+the 2K program memory. No assembler is built — the IDE is the toolchain.
+
+---
+
+## 6. Diagram format (shared by runtime and authoring tool)
+
+A diagram is plain JSON. Components bind directly to pin names — no nets, no wires.
+Both tools read this format: the runtime renders and runs it; the authoring tool writes
+it. See `diagrams/lab-counter.example.json` for a concrete instance.
+
+Minimum fields per component type:
+- **led** — `id`, `pin`, position
+- **button** — `id`, `pin`, position, `activeLow` (whether pressed = 0)
+- **sevenseg** — `id`, `pins` (array of 7, segment order a–g, plus optionally a common/
+  digit-select pin for multiplexed multi-digit setups), position
+
+For multiplexed multi-digit displays, represent each digit's common/select line as a
+pin the firmware drives, so the PoV accumulation (§4) reflects which digit is active
+when.
+
+---
+
+## 7. Build order (de-risked)
+
+1. **CPU core + memory + HEX loader**, verified against known firmware. Get `BSF`/`BCF`
+   and the flag/banking edge cases right *first* — they're the SimulIDE failure and the
+   trust foundation.
+2. **TMR0 + prescaler + interrupts.** Now delay loops and timer-based debounce match
+   hardware.
+3. **Cycle-driven scheduler + frame sampling.** The spine; lock it down early.
+4. **Components**: LEDs, buttons, then 7-seg with PoV accumulation.
+5. **Student runtime**: load hex + JSON diagram, run/stop, button clicks.
+6. **Authoring**: hand-write JSON for the first labs; build a drag-and-drop editor later
+   if it's worth it.
+
+Throughout: maintain the **MPLAB-comparison test suite** (§ trust anchor in README) so
+every core change is checked cycle-by-cycle against ground truth.

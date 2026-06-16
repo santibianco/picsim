@@ -1,0 +1,50 @@
+{
+  "name": "Lab - Counter with multiplexed display",
+  "chip": "16F628A",
+  "clock_hz": 4000000,
+  "description": "Example diagram. Two 7-seg digits multiplexed on PORTB segments with PORTA digit-select lines, one LED, and one active-low button. Students load their .hex against this; they do not edit it.",
+  "components": [
+    {
+      "type": "led",
+      "id": "L1",
+      "pin": "RB7",
+      "x": 320,
+      "y": 40,
+      "label": "Status LED"
+    },
+    {
+      "type": "button",
+      "id": "SW1",
+      "pin": "RA4",
+      "activeLow": true,
+      "x": 40,
+      "y": 220,
+      "label": "Count / Reset"
+    },
+    {
+      "type": "sevenseg",
+      "id": "D0",
+      "pins": ["RB0", "RB1", "RB2", "RB3", "RB4", "RB5", "RB6"],
+      "common": "RA0",
+      "commonActiveLow": false,
+      "x": 180,
+      "y": 80,
+      "label": "Units digit"
+    },
+    {
+      "type": "sevenseg",
+      "id": "D1",
+      "pins": ["RB0", "RB1", "RB2", "RB3", "RB4", "RB5", "RB6"],
+      "common": "RA1",
+      "commonActiveLow": false,
+      "x": 110,
+      "y": 80,
+      "label": "Tens digit"
+    }
+  ],
+  "_notes": {
+    "segment_order": "pins array is segments a,b,c,d,e,f,g in that order. Decimal point not used here; add an 8th pin if needed.",
+    "multiplexing": "Both digits share the same 7 segment pins on PORTB and are selected one at a time via their distinct 'common' pin on PORTA. The runtime accumulates per-segment on-time across each frame so persistence-of-vision renders correctly and an incorrect refresh duty cycle shows up as dim digits.",
+    "binding_model": "Components bind directly to pin names. There are no wires or nets. This is the entire abstraction."
+  }
+}

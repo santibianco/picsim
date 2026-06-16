@@ -1,0 +1,8 @@
+# Rust build output
+/target
+
+# Backup files
+**/*.rs.bk
+
+# Cargo.lock is omitted for a library crate (no binaries shipped from here).
+Cargo.lock

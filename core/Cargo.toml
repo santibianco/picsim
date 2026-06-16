@@ -1,0 +1,18 @@
+[package]
+name = "new-proteus-core"
+version = "0.1.0"
+edition = "2021"
+description = "Cycle-accurate PIC16F628A simulation core for New Proteus."
+license = "MIT OR Apache-2.0"
+
+# The core is intentionally dependency-free so `cargo test` builds and runs with
+# no network and no extra toolchain. The wasm-bindgen wrapper and the `cdylib`
+# crate-type are added with the browser build-tooling milestone (not step 1).
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
