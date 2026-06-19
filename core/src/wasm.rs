@@ -61,10 +61,11 @@ pub extern "C" fn np_reset() {
     sim().reset();
 }
 
-/// Advance the simulation by `n` instruction cycles.
+/// Advance the simulation by up to `n` instruction cycles, stopping early at a
+/// breakpoint. Returns the cycles actually run.
 #[no_mangle]
-pub extern "C" fn np_run_cycles(n: u32) {
-    let _ = sim().run_cycles(n as u64);
+pub extern "C" fn np_run_cycles(n: u32) -> u32 {
+    sim().run_cycles(n as u64).unwrap_or(0) as u32
 }
 
 /// Reset the per-frame on-time accumulators (call at the start of each frame).
@@ -172,4 +173,40 @@ pub extern "C" fn np_disasm(word: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn np_disasm_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(DISASM_BUF) as *mut u8
+}
+
+// ---- debugger v2: breakpoints + live edits ----
+
+/// 1 if the last `np_run_cycles` stopped at a breakpoint.
+#[no_mangle]
+pub extern "C" fn np_break_hit() -> u32 {
+    sim().break_hit() as u32
+}
+
+/// Set / clear a breakpoint at a program address; clear all.
+#[no_mangle]
+pub extern "C" fn np_set_break(addr: u32) {
+    sim().set_break(addr as u16);
+}
+#[no_mangle]
+pub extern "C" fn np_clear_break(addr: u32) {
+    sim().clear_break(addr as u16);
+}
+#[no_mangle]
+pub extern "C" fn np_clear_breaks() {
+    sim().clear_breaks();
+}
+
+/// Live edits: write a data cell (abs addr `0x000..=0x1FF`), set W, set PC.
+#[no_mangle]
+pub extern "C" fn np_write_data(addr: u32, val: u32) {
+    sim().write_data(addr as usize, val as u8);
+}
+#[no_mangle]
+pub extern "C" fn np_set_w(val: u32) {
+    sim().set_w(val as u8);
+}
+#[no_mangle]
+pub extern "C" fn np_set_pc(addr: u32) {
+    sim().set_pc(addr as u16);
 }

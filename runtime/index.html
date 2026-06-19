@@ -78,6 +78,14 @@
   .watchRow .wval { color:#e6edf3; width:46px; } .watchRow .wbin { color:#6e7681; width:72px; }
   .watchRow .wdel { margin-left:auto; background:none; border:none; color:#6e7681; cursor:pointer; font-size:14px; line-height:1; }
   .watchRow .wdel:hover { color:#f85149; }
+  #step10, #step100 { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:7px; padding:5px 9px; font-size:12px; cursor:pointer; }
+  #step10:hover, #step100:hover { background:#30363d; } #step10:disabled, #step100:disabled { opacity:.45; cursor:not-allowed; }
+  .progRow { cursor:pointer; }
+  .progRow .bp { width:9px; height:9px; border-radius:50%; border:1px solid #30363d; flex:0 0 auto; align-self:center; }
+  .progRow .bp.on { background:#f85149; border-color:#f85149; }
+  .dbgData .dcell, .dbgSFR .sval { cursor:pointer; }
+  .dbgData .dcell:hover, .dbgSFR .sval:hover { outline:1px solid #1f6feb; border-radius:3px; }
+  .cellEdit { width:34px; background:#0d1117; color:#79c0ff; border:1px solid #1f6feb; border-radius:3px; font-family:ui-monospace,monospace; font-size:11px; padding:0 2px; }
 </style>
 </head>
 <body>
@@ -111,6 +119,8 @@
       <span>STATUS <b id="dbgStatus">0x18</b></span>
       <span class="dbgFlags" id="dbgFlags"></span>
       <button id="stepBtn" disabled>Paso ▸</button>
+      <button id="step10" disabled>×10</button>
+      <button id="step100" disabled>×100</button>
     </div>
     <div class="dbgTabs">
       <button class="dbgTab active" data-view="prog">Programa</button>
@@ -301,6 +311,7 @@ function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y);
 const canvas=document.getElementById("board"), ctx=canvas.getContext("2d"), statusEl=document.getElementById("status");
 let components=build(LED_DIAGRAM), running=false;
 let dbgOpen=false, dbgTick=0, dbgView="prog", dbgBank=0;
+const breakSet=new Set();
 const SUBSTEPS=64;
 let clockHz=4000000;
 let cycleBudget=0; // carries fractional cycles so low clocks run < 1 cycle/frame
@@ -312,12 +323,13 @@ function frame(){
     if(want>0){
       const steps=Math.min(SUBSTEPS,want), per=Math.max(1,Math.floor(want/steps));
       for(const c of components) c.reset();
-      let ran=0;
-      for(let s=0;s<steps;s++){ X.np_run_cycles(per); ran+=per; const pa=X.np_read_porta(),pb=X.np_read_portb(); for(const c of components) c.sample(pa,pb); }
-      if(ran<want) X.np_run_cycles(want-ran);
+      let ran=0, brk=false;
+      for(let s=0;s<steps && !brk;s++){ ran+=X.np_run_cycles(per); const pa=X.np_read_porta(),pb=X.np_read_portb(); for(const c of components) c.sample(pa,pb); if(X.np_break_hit()) brk=true; }
+      if(!brk && ran<want){ X.np_run_cycles(want-ran); if(X.np_break_hit()) brk=true; }
       // Persist brightness across frames (~80 ms) so a slow multiplex spanning
       // several frames still shows every digit, like the eye / real hardware.
       for(const c of components) if(c.integrate) c.integrate(0.2);
+      if(brk){ running=false; document.getElementById("runBtn").textContent="Ejecutar"; if(dbgOpen) refreshDebug(); }
     }
   }
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -331,13 +343,13 @@ requestAnimationFrame(frame);
 // ===== controls =====
 function setStatus(m,c){ statusEl.innerHTML=m; statusEl.className="status "+(c||""); }
 function enable(ids,on){ ids.forEach((id)=>document.getElementById(id).disabled=!on); }
-function coreReady(){ populateLabs(); enable(["labSelect","dbgToggle","stepBtn"],true); }
+function coreReady(){ populateLabs(); enable(["labSelect","dbgToggle","stepBtn","step10","step100"],true); }
 function setDiagram(d){ components=build(d); }
 function afterHex(ok,name){ if(!ok){ setStatus("No se pudo leer "+name,"err"); return; }
   X.np_reset(); for(const c of components) if(c.idle) c.idle();
   enable(["runBtn","resetBtn"],true);
   running=true; document.getElementById("runBtn").textContent="Pausar";
-  setStatus("Cargado "+name+" ✓ — ejecutando.","ok"); if(dbgOpen){ buildProgView(); refreshDebug(); } }
+  setStatus("Cargado "+name+" ✓ — ejecutando.","ok"); breakSet.clear(); if(X) X.np_clear_breaks(); if(dbgOpen){ buildProgView(); refreshDebug(); } }
 
 document.getElementById("wasmFile").addEventListener("change", async (e)=>{
   const f=e.target.files[0]; if(!f) return;
@@ -386,7 +398,7 @@ document.getElementById("labSelect").addEventListener("change", (e)=>{
     setStatus("Placa “"+lab.name+"” cargada ✓ — ahora cargá tu programa (.hex).","ok");
   }
 });
-document.getElementById("runBtn").addEventListener("click", ()=>{ running=!running; document.getElementById("runBtn").textContent=running?"Pausar":"Ejecutar"; });
+document.getElementById("runBtn").addEventListener("click", ()=>{ running=!running; if(running && X && breakSet.has(X.np_pc())) X.np_step(); document.getElementById("runBtn").textContent=running?"Pausar":"Ejecutar"; });
 document.getElementById("resetBtn").addEventListener("click", ()=>{ X.np_reset(); for(const c of components) if(c.idle) c.idle(); if(dbgOpen) refreshDebug(); });
 
 // ===== Depurador (debugger panel) =====
@@ -422,7 +434,7 @@ function buildSFRView(){
     const v = addr<0 ? X.np_w() : X.np_read_data(addr);
     const hex="0x"+v.toString(16).toUpperCase().padStart(2,"0"), bin=v.toString(2).padStart(8,"0");
     const bh = bits ? bits.split(" ").map((bn,i)=>`<span class="${(v>>(7-i))&1?"on":""}">${bn}</span>`).join("") : "";
-    return `<div class="sfrRow"><span class="sname">${name}</span><span class="sval">${hex}</span><span class="sbin">${bin}</span><span class="sbits">${bh}</span></div>`;
+    return `<div class="sfrRow"><span class="sname">${name}</span><span class="sval" data-addr="${addr}">${hex}</span><span class="sbin">${bin}</span><span class="sbits">${bh}</span></div>`;
   }).join("");
 }
 function buildDataView(){
@@ -431,7 +443,7 @@ function buildDataView(){
   for(let off=0;off<0x80;off++){
     if(off%16===0) cells.push(`<span class="dlabel">0x${(base+off).toString(16).toUpperCase().padStart(2,"0")}</span>`);
     const v=X.np_read_data(base+off);
-    cells.push(`<span class="dcell${off<0x20?" sfr":""}">${v.toString(16).toUpperCase().padStart(2,"0")}</span>`);
+    cells.push(`<span class="dcell${off<0x20?" sfr":""}" data-addr="${base+off}">${v.toString(16).toUpperCase().padStart(2,"0")}</span>`);
   }
   document.getElementById("dbgData").innerHTML=cells.join("");
 }
@@ -470,7 +482,7 @@ function buildProgView(){
     const word=X.np_prog_word(a);
     const dn=X.np_disasm(word);
     const txt=new TextDecoder().decode(new Uint8Array(X.memory.buffer, X.np_disasm_buffer(), dn));
-    rows.push(`<div class="progRow" data-a="${a}"><span class="pa">0x${a.toString(16).toUpperCase().padStart(3,"0")}</span><span class="pw">0x${word.toString(16).toUpperCase().padStart(4,"0")}</span><span class="pm">${txt}</span></div>`);
+    rows.push(`<div class="progRow" data-a="${a}"><span class="bp${breakSet.has(a)?" on":""}"></span><span class="pa">0x${a.toString(16).toUpperCase().padStart(3,"0")}</span><span class="pw">0x${word.toString(16).toUpperCase().padStart(4,"0")}</span><span class="pm">${txt}</span></div>`);
   }
   document.getElementById("dbgProg").innerHTML=rows.join("");
   highlightPC();
@@ -481,14 +493,14 @@ function highlightPC(){
   const row=prog.querySelector(`.progRow[data-a="${X.np_pc()}"]`);
   if(row){ row.classList.add("pc"); row.scrollIntoView({block:"nearest"}); }
 }
-function stepOnce(){
+function snapBoard(){ if(!X) return; const pa=X.np_read_porta(), pb=X.np_read_portb(); for(const c of components){ if(c.reset)c.reset(); if(c.sample)c.sample(pa,pb); if(c.integrate)c.integrate(1); } }
+function stepN(n){
   if(!X) return;
   running=false; document.getElementById("runBtn").textContent="Ejecutar";
-  X.np_step();
-  const pa=X.np_read_porta(), pb=X.np_read_portb();
-  for(const c of components){ if(c.reset)c.reset(); if(c.sample)c.sample(pa,pb); if(c.integrate)c.integrate(1); }
-  refreshDebug();
+  for(let i=0;i<n;i++){ X.np_step(); if(breakSet.has(X.np_pc())) break; }
+  snapBoard(); refreshDebug();
 }
+function stepOnce(){ stepN(1); }
 document.getElementById("dbgToggle").addEventListener("click", ()=>{
   dbgOpen=!dbgOpen;
   document.getElementById("dbgPanel").classList.toggle("hidden", !dbgOpen);
@@ -508,6 +520,34 @@ document.getElementById("bank0").addEventListener("click", ()=>{ dbgBank=0; docu
 document.getElementById("bank1").addEventListener("click", ()=>{ dbgBank=1; document.getElementById("bank1").classList.add("active"); document.getElementById("bank0").classList.remove("active"); buildDataView(); });
 document.getElementById("watchAdd").addEventListener("click", addWatch);
 document.getElementById("watchInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter") addWatch(); });
+document.getElementById("step10").addEventListener("click", ()=>stepN(10));
+document.getElementById("step100").addEventListener("click", ()=>stepN(100));
+// click a program row to toggle a breakpoint (red dot); the run stops there.
+document.getElementById("dbgProg").addEventListener("click", (e)=>{
+  const row=e.target.closest(".progRow"); if(!row||!X) return;
+  const a=+row.dataset.a;
+  if(breakSet.has(a)){ breakSet.delete(a); X.np_clear_break(a); } else { breakSet.add(a); X.np_set_break(a); }
+  row.querySelector(".bp").classList.toggle("on", breakSet.has(a));
+});
+// inline hex edit of a register/cell (pauses first so the live refresh can't clobber it).
+function editCell(span, cur, write){
+  running=false; document.getElementById("runBtn").textContent="Ejecutar";
+  const inp=document.createElement("input"); inp.className="cellEdit";
+  inp.value=cur.toString(16).toUpperCase().padStart(2,"0");
+  span.replaceWith(inp); inp.focus(); inp.select();
+  let done=false;
+  const commit=(save)=>{ if(done) return; done=true; if(save){ const v=parseInt(inp.value,16); if(!isNaN(v)) write(v & 0xFF); } refreshActiveView(); };
+  inp.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); commit(true); } else if(e.key==="Escape") commit(false); });
+  inp.addEventListener("blur",()=>commit(true));
+}
+document.getElementById("dbgData").addEventListener("click", (e)=>{
+  const cell=e.target.closest(".dcell"); if(!cell||!X) return;
+  const addr=+cell.dataset.addr; editCell(cell, X.np_read_data(addr), (v)=>X.np_write_data(addr,v));
+});
+document.getElementById("dbgSFR").addEventListener("click", (e)=>{
+  const val=e.target.closest(".sval"); if(!val||!X) return;
+  const addr=+val.dataset.addr; editCell(val, addr<0?X.np_w():X.np_read_data(addr), (v)=> addr<0?X.np_set_w(v):X.np_write_data(addr,v));
+});
 function parseClock(s){ s=(s||"").trim().toLowerCase().replace(/hz$/,"").trim(); const m=/^([0-9]*\.?[0-9]+)\s*([kmg]?)$/.exec(s); if(!m)return null; const mult={k:1e3,m:1e6,g:1e9}[m[2]]||1; return Math.round(parseFloat(m[1])*mult); }
 function applyClock(){ const v=parseClock(document.getElementById("clock").value); const el=document.getElementById("clockVal");
   if(v&&v>0){ clockHz=v; if(X)X.np_set_clock_hz(v); el.textContent=v.toLocaleString("es-AR")+" Hz"; el.className="status ok"; }

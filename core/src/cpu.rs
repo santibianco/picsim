@@ -64,6 +64,10 @@ pub struct Cpu {
     eeprom: [u8; 128],
     /// EECON2 write-unlock progress: 0 idle, 1 saw 0x55, 2 armed (0x55 then 0xAA).
     ee_unlock: u8,
+    /// Debugger breakpoints — one flag per program word (set via the runtime).
+    breaks: Vec<bool>,
+    /// Set by the scheduler when a run stopped at a breakpoint (cleared each run).
+    pub break_hit: bool,
 }
 
 impl Cpu {
@@ -81,6 +85,8 @@ impl Cpu {
             sampler: PinSampler::new(),
             eeprom: [0xFF; 128],
             ee_unlock: 0,
+            breaks: vec![false; PROG_WORDS],
+            break_hit: false,
         }
     }
 
@@ -110,6 +116,7 @@ impl Cpu {
         self.timer.reset();
         self.sampler.reset_frame();
         self.ee_unlock = 0; // EEPROM array persists (non-volatile) across reset
+        self.break_hit = false; // breakpoints themselves persist across reset
     }
 
     /// Fetch the instruction word at PC (PC wraps within program flash).
@@ -137,6 +144,12 @@ impl Cpu {
     pub fn eeprom_byte(&self, addr: u8) -> u8 {
         self.eeprom[(addr & 0x7F) as usize]
     }
+
+    // ---- debugger breakpoints ----
+    pub fn set_break(&mut self, addr: u16) { let a = addr as usize; if a < self.breaks.len() { self.breaks[a] = true; } }
+    pub fn clear_break(&mut self, addr: u16) { let a = addr as usize; if a < self.breaks.len() { self.breaks[a] = false; } }
+    pub fn clear_breaks(&mut self) { for b in self.breaks.iter_mut() { *b = false; } }
+    pub fn is_break(&self, pc: u16) -> bool { let a = pc as usize; a < self.breaks.len() && self.breaks[a] }
 
     /// A write touched EECON1: service an EEPROM read (RD), or — if write-enabled
     /// and unlocked — an EEPROM write (WR). Both control bits clear when done.

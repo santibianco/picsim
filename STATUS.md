@@ -7,6 +7,10 @@ classroom (codename *New Proteus*). **Shipped and live:**
 
 ## Session log (newest first) — update this at the end of each session
 
+- **2026-06-18 (v2)** — Debugger v2: **breakpoints** (click a program row; the run stops
+  there, resume steps past it — core `np_set_break`/`np_clear_break`/`np_break_hit`, the
+  scheduler stops at a marked PC), **Paso ×10/×100**, and **live memory editing** (click a
+  data cell or SFR value → `np_write_data`/`np_set_w`). Verified in-browser. *Uncommitted.*
 - **2026-06-18** — Added a read-only **debugger (Depurador)**: core accessors
   (`np_pc/np_w/np_cycles/np_read_data/np_prog_word/np_disasm/np_step` in `core/src/lib.rs`
   + `wasm.rs`, unit-tested + checked by `verify-core.js`) and a collapsible runtime panel

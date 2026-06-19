@@ -75,11 +75,19 @@ A collapsible **"Depurador"** section under the board (a button expands it):
 6. **Polish** — Spanish labels, changed-value highlight, perf throttle; update README /
    STATUS / architecture docs; push.
 
-## Out of scope for v1 (candidate v2)
-- **Breakpoints** (stop at a PC, or when a register hits a value).
-- **Memory editing** (write a register live).
-- **Symbol/variable names** from MPLAB's `.cof`/`.sym` (watch by C/asm symbol).
-- **Source-level view** (map PC → `.asm` line).
+## v2 — shipped (2026-06-18)
+- **Breakpoints** — click a program row to toggle (red dot); a run stops *before* that word
+  executes, and resuming steps once past it. Core: `np_set_break` / `np_clear_break` /
+  `np_clear_breaks` / `np_break_hit`; the scheduler stops at a marked PC.
+- **Step ×10 / ×100** — blast through delay loops (stops early if it hits a breakpoint).
+- **Memory editing** — click a data-grid cell or an SFR value to write it live
+  (`np_write_data` / `np_set_w` / `np_set_pc`); editing pauses the run so the refresh can't
+  clobber the field.
+
+## Not planned (by request)
+- **Symbol/variable names** and a **source-level view** are deliberately omitted, so
+  students read the raw machine code — hex addresses, no equs/labels.
+- A breakpoint **on a register value** (vs. a PC) could be a future add.
 
 ## Cycle-accuracy & rollout safety
 All reads are passive — they never advance simulated time; `np_step` advances exactly one

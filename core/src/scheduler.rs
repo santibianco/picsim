@@ -35,9 +35,17 @@ impl Scheduler {
     /// count is already past the old target, so this call naturally runs one
     /// fewer — the overshoot is carried, not lost. That is the no-drift property.
     pub fn run_cycles(&mut self, cpu: &mut Cpu, n: u64) -> Result<u64, StepError> {
+        cpu.break_hit = false;
         self.target = self.target.saturating_add(n);
         let start = cpu.cycles;
         while cpu.cycles < self.target {
+            // Breakpoint: stop *before* executing the instruction at a marked PC.
+            // The runtime steps once past it on resume, so this never deadlocks.
+            if cpu.is_break(cpu.pc) {
+                cpu.break_hit = true;
+                self.target = cpu.cycles; // drop the unreached budget so it can't pile up
+                break;
+            }
             cpu.step()?;
         }
         Ok(cpu.cycles - start)

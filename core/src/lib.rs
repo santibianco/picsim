@@ -191,6 +191,24 @@ impl Core {
         let _ = self.cpu.step();
         self.cpu.cycles.wrapping_sub(before) as u8
     }
+
+    // ---- debugger v2: live edits + breakpoints ----
+
+    /// Write a data-memory cell by absolute physical address (`0x000..=0x1FF`).
+    pub fn write_data(&mut self, addr: usize, val: u8) {
+        if addr < 0x200 { self.cpu.mem.phys_write(addr, val); }
+    }
+    /// Set the W register.
+    pub fn set_w(&mut self, val: u8) { self.cpu.w = val; }
+    /// Set the program counter (13-bit).
+    pub fn set_pc(&mut self, addr: u16) { self.cpu.pc = addr & 0x1FFF; }
+
+    /// Breakpoint at a program address: a run stops *before* this word executes.
+    pub fn set_break(&mut self, addr: u16) { self.cpu.set_break(addr); }
+    pub fn clear_break(&mut self, addr: u16) { self.cpu.clear_break(addr); }
+    pub fn clear_breaks(&mut self) { self.cpu.clear_breaks(); }
+    /// Whether the last `run_cycles` stopped at a breakpoint.
+    pub fn break_hit(&self) -> bool { self.cpu.break_hit }
 }
 
 impl Default for Core {
@@ -258,5 +276,25 @@ mod tests {
         assert_eq!(core.read_data(0x03), 0x38); // STATUS = POR 0x18 | RP0 (0x20)
         assert_eq!(core.w(), 0);
         assert_eq!(core.read_data(0x500), 0); // out-of-range read -> 0
+    }
+
+    #[test]
+    fn breakpoints_stop_the_run_and_edits_take() {
+        let mut core = Core::new();
+        core.cpu_mut().program = vec![0x0000; 100]; // NOPs
+        core.set_break(5); // stop before executing word 5
+        let ran = core.run_cycles(50).unwrap();
+        assert_eq!(core.pc(), 5); // stopped at the breakpoint
+        assert_eq!(ran, 5); // ran 0..4, then broke before 5
+        assert!(core.break_hit());
+        core.step_one(); // resume: step once past it
+        let ran2 = core.run_cycles(40).unwrap();
+        assert!(!core.break_hit()); // this run hit no breakpoint
+        assert!(ran2 > 0 && core.pc() > 6);
+        // live edits
+        core.write_data(0x20, 0xAB);
+        assert_eq!(core.read_data(0x20), 0xAB);
+        core.set_w(0x5A);
+        assert_eq!(core.w(), 0x5A);
     }
 }

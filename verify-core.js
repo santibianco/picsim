@@ -69,8 +69,10 @@ WebAssembly.instantiate(bytes, {}).then(({ instance }) => {
     );
   }
 
-  process.exit(eepromOk && dbgOk ? 0 : 1);
+  // Let Node exit naturally — process.exit() here races wasm/libuv teardown on
+  // Windows and trips a (harmless but noisy) assertion. exitCode does the same job.
+  process.exitCode = eepromOk && dbgOk ? 0 : 1;
 }).catch((e) => {
   console.error("✗ instantiate failed:", e.message);
-  process.exit(1);
+  process.exitCode = 1;
 });
