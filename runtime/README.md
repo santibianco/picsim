@@ -31,7 +31,7 @@ browser offers to **Install** it.
    the `.wasm` to `release/DEPS/`, not the top-level `release/` dir:
 
    ```sh
-   node -e "const fs=require('fs');const b=fs.readFileSync('core/target/wasm32-unknown-unknown/release/deps/new_proteus_core.wasm').toString('base64');fs.writeFileSync('runtime/core-wasm.js','window.NP_WASM_BASE64=\"'+b+'\";');"
+   node embed-core.js     # then: node verify-core.js  (must print both ✓)
    ```
 
    This regenerates `runtime/core-wasm.js` (the base64-embedded core).

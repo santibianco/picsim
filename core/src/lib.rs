@@ -146,6 +146,51 @@ impl Core {
     pub fn cpu_mut(&mut self) -> &mut Cpu {
         &mut self.cpu
     }
+
+    // ---- debugger / inspection surface (read-only + single-step) ----
+    // Read accessors never advance simulated time; `step_one` advances exactly
+    // one instruction (cycle-exact). The C-ABI in `wasm.rs` is a thin wrapper and
+    // `verify-core.js` pins the contract.
+
+    /// Program counter (13-bit).
+    pub fn pc(&self) -> u16 {
+        self.cpu.pc
+    }
+
+    /// Working register W.
+    pub fn w(&self) -> u8 {
+        self.cpu.w
+    }
+
+    /// Instruction cycles elapsed since the last reset.
+    pub fn cycle_count(&self) -> u64 {
+        self.cpu.cycles
+    }
+
+    /// Read a data-memory cell by absolute physical address (`0x000..=0x1FF`,
+    /// i.e. `bank*0x80 + offset`). Returns the raw register byte — PORT cells
+    /// read as the output latch — and 0 for out-of-range addresses.
+    pub fn read_data(&self, addr: usize) -> u8 {
+        if addr < 0x200 {
+            self.cpu.mem.phys_read(addr)
+        } else {
+            0
+        }
+    }
+
+    /// Read a program-flash word by address (`0x000..=0x7FF`). Out-of-range
+    /// addresses return the blank (erased) word.
+    pub fn prog_word(&self, addr: usize) -> u16 {
+        self.cpu.program.get(addr).copied().unwrap_or(hex::BLANK_WORD)
+    }
+
+    /// Single-step: execute exactly one instruction; returns its cycle cost
+    /// (0 if the PC has left valid program memory). Cycle-exact.
+    pub fn step_one(&mut self) -> u8 {
+        let before = self.cpu.cycles;
+        let _ = self.cpu.step();
+        self.cpu.cycles.wrapping_sub(before) as u8
+    }
 }
 
 impl Default for Core {
@@ -195,5 +240,23 @@ mod tests {
         assert!(core.set_pin_name("RB0", true)); // press -> high
         core.run_cycles(1).unwrap(); // BTFSS skips the GOTO
         assert_eq!(core.cpu().pc, 2);
+    }
+
+    #[test]
+    fn debugger_surface_steps_and_inspects() {
+        // Mirrors verify-core.js part (B): step BSF STATUS,RP0 and inspect.
+        let mut core = Core::new();
+        core.load_hex(":0A000000831686018312860A032886\n:00000001FF\n")
+            .unwrap();
+        assert_eq!(core.pc(), 0);
+        assert_eq!(core.cycle_count(), 0);
+        assert_eq!(core.prog_word(0), 0x1683);
+        assert_eq!(crate::decode::disassemble(core.prog_word(0)), "BSF 0x03, 5");
+        assert_eq!(core.step_one(), 1); // BSF is 1 cycle
+        assert_eq!(core.pc(), 1);
+        assert_eq!(core.cycle_count(), 1);
+        assert_eq!(core.read_data(0x03), 0x38); // STATUS = POR 0x18 | RP0 (0x20)
+        assert_eq!(core.w(), 0);
+        assert_eq!(core.read_data(0x500), 0); // out-of-range read -> 0
     }
 }

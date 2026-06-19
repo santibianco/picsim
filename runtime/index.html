@@ -31,6 +31,53 @@
   .ok { color: #3fb950; } .err { color: #f85149; }
   .speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8b949e; }
   #wasmWrap.hidden { display: none; }
+  .dbgToggle { background:#161b22; color:#9fb6c9; border:1px solid #30363d; border-radius:8px; padding:6px 12px; font-size:12px; font-family:ui-monospace,monospace; cursor:pointer; }
+  .dbgToggle:hover { background:#21262d; } .dbgToggle:disabled { opacity:.45; cursor:not-allowed; }
+  .dbgPanel { width:920px; max-width:100%; box-sizing:border-box; background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:10px 14px; font-family:ui-monospace,monospace; font-size:12px; color:#9fb6c9; }
+  .dbgPanel.hidden { display:none; }
+  .dbgHeader { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+  .dbgHeader b { color:#e6edf3; font-weight:600; }
+  .dbgFlags { display:inline-flex; gap:4px; }
+  .dbgFlags span { padding:1px 5px; border-radius:4px; background:#21262d; color:#6e7681; }
+  .dbgFlags span.on { background:rgba(31,111,235,.25); color:#79c0ff; }
+  #stepBtn { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:7px; padding:5px 12px; font-size:12px; cursor:pointer; }
+  #stepBtn:hover { background:#30363d; } #stepBtn:disabled { opacity:.45; cursor:not-allowed; }
+  .dbgCaption { margin:10px 0 4px; color:#6e7681; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .dbgProg { max-height:220px; overflow-y:auto; border:1px solid #21262d; border-radius:8px; background:#010409; }
+  .progRow { display:flex; gap:12px; padding:1px 10px; }
+  .progRow:hover { background:#161b22; }
+  .progRow.pc { background:rgba(63,185,80,.18); }
+  .progRow .pa { color:#6e7681; width:46px; }
+  .progRow .pw { color:#79c0ff; width:56px; }
+  .progRow .pm { color:#e6edf3; }
+  .dbgTabs { display:flex; gap:4px; margin:10px 0 6px; }
+  .dbgTab { background:#161b22; color:#8b949e; border:1px solid #30363d; border-radius:7px 7px 0 0; padding:4px 12px; font-size:12px; cursor:pointer; }
+  .dbgTab.active { background:#0d1117; color:#e6edf3; }
+  .dbgView.hidden { display:none; }
+  .dataBankBar { color:#6e7681; font-size:11px; margin-bottom:6px; display:flex; gap:5px; align-items:center; }
+  .bankBtn { background:#21262d; color:#9fb6c9; border:1px solid #30363d; border-radius:5px; padding:2px 9px; font-size:11px; cursor:pointer; }
+  .bankBtn.active { background:rgba(31,111,235,.25); color:#79c0ff; }
+  .dbgData { display:grid; grid-template-columns:auto repeat(16,1fr); gap:2px 6px; background:#010409; border:1px solid #21262d; border-radius:8px; padding:8px; font-size:11px; }
+  .dbgData .dlabel { color:#6e7681; padding-right:4px; }
+  .dbgData .dcell { color:#e6edf3; text-align:center; }
+  .dbgData .dcell.sfr { color:#d2a8ff; }
+  .dbgSFR { background:#010409; border:1px solid #21262d; border-radius:8px; padding:6px 8px; }
+  .sfrRow { display:flex; gap:10px; align-items:center; padding:1px 0; }
+  .sfrRow .sname { color:#9fb6c9; width:64px; } .sfrRow .sval { color:#e6edf3; width:46px; }
+  .sfrRow .sbin { color:#6e7681; width:72px; }
+  .sfrRow .sbits { display:inline-flex; gap:3px; flex-wrap:wrap; }
+  .sfrRow .sbits span { padding:0 4px; border-radius:3px; background:#21262d; color:#6e7681; font-size:10px; }
+  .sfrRow .sbits span.on { background:rgba(31,111,235,.25); color:#79c0ff; }
+  .watchBar { display:flex; gap:6px; margin-bottom:6px; }
+  .watchBar input { flex:0 0 170px; background:#010409; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:4px 8px; font-family:ui-monospace,monospace; font-size:12px; }
+  .watchBar button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:4px 12px; font-size:12px; cursor:pointer; }
+  .dbgWatch { background:#010409; border:1px solid #21262d; border-radius:8px; padding:6px 8px; min-height:28px; }
+  .watchEmpty { color:#6e7681; font-size:11px; }
+  .watchRow { display:flex; gap:10px; align-items:center; padding:1px 0; }
+  .watchRow .wname { color:#79c0ff; width:72px; } .watchRow .waddr { color:#6e7681; width:46px; }
+  .watchRow .wval { color:#e6edf3; width:46px; } .watchRow .wbin { color:#6e7681; width:72px; }
+  .watchRow .wdel { margin-left:auto; background:none; border:none; color:#6e7681; cursor:pointer; font-size:14px; line-height:1; }
+  .watchRow .wdel:hover { color:#f85149; }
 </style>
 </head>
 <body>
@@ -54,6 +101,39 @@
 
   <canvas id="board" width="920" height="640"></canvas>
   <div id="status" class="status">Cargando núcleo…</div>
+
+  <button id="dbgToggle" class="dbgToggle" disabled>▸ Depurador</button>
+  <div id="dbgPanel" class="dbgPanel hidden">
+    <div class="dbgHeader">
+      <span>Ciclos <b id="dbgCycles">0</b></span>
+      <span>PC <b id="dbgPC">0x000</b></span>
+      <span>W <b id="dbgW">0x00</b></span>
+      <span>STATUS <b id="dbgStatus">0x18</b></span>
+      <span class="dbgFlags" id="dbgFlags"></span>
+      <button id="stepBtn" disabled>Paso ▸</button>
+    </div>
+    <div class="dbgTabs">
+      <button class="dbgTab active" data-view="prog">Programa</button>
+      <button class="dbgTab" data-view="data">Datos</button>
+      <button class="dbgTab" data-view="sfr">SFR</button>
+      <button class="dbgTab" data-view="watch">Vigilar</button>
+    </div>
+    <div id="view-prog" class="dbgView"><div id="dbgProg" class="dbgProg"></div></div>
+    <div id="view-data" class="dbgView hidden">
+      <div class="dataBankBar">Banco
+        <button id="bank0" class="bankBtn active">0</button><button id="bank1" class="bankBtn">1</button>
+      </div>
+      <div id="dbgData" class="dbgData"></div>
+    </div>
+    <div id="view-sfr" class="dbgView hidden"><div id="dbgSFR" class="dbgSFR"></div></div>
+    <div id="view-watch" class="dbgView hidden">
+      <div class="watchBar">
+        <input id="watchInput" type="text" placeholder="0x20 o PORTB" autocomplete="off" />
+        <button id="watchAdd">Agregar</button>
+      </div>
+      <div id="dbgWatch" class="dbgWatch"></div>
+    </div>
+  </div>
 
 <!-- Optional embedded core: `core-wasm.js` defines window.NP_WASM_BASE64 so the
      page is self-contained and you only pick a .hex. Missing file is harmless. -->
@@ -220,6 +300,7 @@ function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y);
 // ===== loop =====
 const canvas=document.getElementById("board"), ctx=canvas.getContext("2d"), statusEl=document.getElementById("status");
 let components=build(LED_DIAGRAM), running=false;
+let dbgOpen=false, dbgTick=0, dbgView="prog", dbgBank=0;
 const SUBSTEPS=64;
 let clockHz=4000000;
 let cycleBudget=0; // carries fractional cycles so low clocks run < 1 cycle/frame
@@ -242,6 +323,7 @@ function frame(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawChip(ctx);
   for(const c of components) c.draw(ctx);
+  if(dbgOpen && running && (++dbgTick % 6 === 0)) refreshDebug();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -249,13 +331,13 @@ requestAnimationFrame(frame);
 // ===== controls =====
 function setStatus(m,c){ statusEl.innerHTML=m; statusEl.className="status "+(c||""); }
 function enable(ids,on){ ids.forEach((id)=>document.getElementById(id).disabled=!on); }
-function coreReady(){ populateLabs(); enable(["labSelect"],true); }
+function coreReady(){ populateLabs(); enable(["labSelect","dbgToggle","stepBtn"],true); }
 function setDiagram(d){ components=build(d); }
 function afterHex(ok,name){ if(!ok){ setStatus("No se pudo leer "+name,"err"); return; }
   X.np_reset(); for(const c of components) if(c.idle) c.idle();
   enable(["runBtn","resetBtn"],true);
   running=true; document.getElementById("runBtn").textContent="Pausar";
-  setStatus("Cargado "+name+" ✓ — ejecutando.","ok"); }
+  setStatus("Cargado "+name+" ✓ — ejecutando.","ok"); if(dbgOpen){ buildProgView(); refreshDebug(); } }
 
 document.getElementById("wasmFile").addEventListener("change", async (e)=>{
   const f=e.target.files[0]; if(!f) return;
@@ -305,7 +387,127 @@ document.getElementById("labSelect").addEventListener("change", (e)=>{
   }
 });
 document.getElementById("runBtn").addEventListener("click", ()=>{ running=!running; document.getElementById("runBtn").textContent=running?"Pausar":"Ejecutar"; });
-document.getElementById("resetBtn").addEventListener("click", ()=>{ X.np_reset(); for(const c of components) if(c.idle) c.idle(); });
+document.getElementById("resetBtn").addEventListener("click", ()=>{ X.np_reset(); for(const c of components) if(c.idle) c.idle(); if(dbgOpen) refreshDebug(); });
+
+// ===== Depurador (debugger panel) =====
+const STATUS_BITS = [["C",0],["DC",1],["Z",2],["RP0",5]];
+function refreshDebug(){
+  if(!X) return;
+  const pc=X.np_pc(), w=X.np_w(), cyc=X.np_cycles(), st=X.np_read_data(0x03);
+  document.getElementById("dbgCycles").textContent = cyc.toLocaleString("es-AR");
+  document.getElementById("dbgPC").textContent = "0x"+pc.toString(16).toUpperCase().padStart(3,"0");
+  document.getElementById("dbgW").textContent = "0x"+w.toString(16).toUpperCase().padStart(2,"0");
+  document.getElementById("dbgStatus").textContent = "0x"+st.toString(16).toUpperCase().padStart(2,"0");
+  document.getElementById("dbgFlags").innerHTML = STATUS_BITS.map(([n,b])=>`<span class="${(st>>b)&1?"on":""}">${n}</span>`).join("");
+  refreshActiveView();
+}
+function refreshActiveView(){
+  if(dbgView==="prog") highlightPC();
+  else if(dbgView==="data") buildDataView();
+  else if(dbgView==="sfr") buildSFRView();
+  else if(dbgView==="watch") buildWatchView();
+}
+const SFRS = [
+  ["W",-1],
+  ["STATUS",0x03,"IRP RP1 RP0 TO PD Z DC C"],
+  ["OPTION",0x81,"RBPU INTEDG T0CS T0SE PSA PS2 PS1 PS0"],
+  ["INTCON",0x0B,"GIE PEIE T0IE INTE RBIE T0IF INTF RBIF"],
+  ["PORTA",0x05],["PORTB",0x06],["TRISA",0x85],["TRISB",0x86],
+  ["TMR0",0x01],["PCL",0x02],["PCLATH",0x0A],["FSR",0x04],
+  ["EEDATA",0x9A],["EEADR",0x9B],["EECON1",0x9C],
+];
+function buildSFRView(){
+  if(!X) return;
+  document.getElementById("dbgSFR").innerHTML = SFRS.map(([name,addr,bits])=>{
+    const v = addr<0 ? X.np_w() : X.np_read_data(addr);
+    const hex="0x"+v.toString(16).toUpperCase().padStart(2,"0"), bin=v.toString(2).padStart(8,"0");
+    const bh = bits ? bits.split(" ").map((bn,i)=>`<span class="${(v>>(7-i))&1?"on":""}">${bn}</span>`).join("") : "";
+    return `<div class="sfrRow"><span class="sname">${name}</span><span class="sval">${hex}</span><span class="sbin">${bin}</span><span class="sbits">${bh}</span></div>`;
+  }).join("");
+}
+function buildDataView(){
+  if(!X) return;
+  const base=dbgBank*0x80, cells=[];
+  for(let off=0;off<0x80;off++){
+    if(off%16===0) cells.push(`<span class="dlabel">0x${(base+off).toString(16).toUpperCase().padStart(2,"0")}</span>`);
+    const v=X.np_read_data(base+off);
+    cells.push(`<span class="dcell${off<0x20?" sfr":""}">${v.toString(16).toUpperCase().padStart(2,"0")}</span>`);
+  }
+  document.getElementById("dbgData").innerHTML=cells.join("");
+}
+let watchList=[]; try{ watchList=JSON.parse(localStorage.getItem("np_watch")||"[]"); }catch(e){}
+const NAME_ADDR={}; SFRS.forEach(([n,a])=>{ if(a>=0) NAME_ADDR[n]=a; });
+function resolveWatch(s){
+  s=(s||"").trim(); if(!s) return null;
+  const up=s.toUpperCase();
+  if(up in NAME_ADDR) return {label:up, addr:NAME_ADDR[up]};
+  const m=/^(?:0x)?([0-9a-f]+)$/i.exec(s); if(!m) return null;
+  const addr=parseInt(m[1],16);
+  if(isNaN(addr)||addr>0x1FF) return null;
+  return {label:"0x"+addr.toString(16).toUpperCase(), addr};
+}
+function saveWatch(){ try{ localStorage.setItem("np_watch", JSON.stringify(watchList)); }catch(e){} }
+function addWatch(){
+  const inp=document.getElementById("watchInput"); const w=resolveWatch(inp.value);
+  if(w && !watchList.some(x=>x.addr===w.addr)){ watchList.push(w); saveWatch(); }
+  inp.value=""; buildWatchView();
+}
+function buildWatchView(){
+  const el=document.getElementById("dbgWatch"); if(!el) return;
+  if(!watchList.length){ el.innerHTML='<div class="watchEmpty">Agregá una dirección (0x20) o un registro (PORTB) para seguir su valor en vivo.</div>'; return; }
+  el.innerHTML=watchList.map((w,i)=>{
+    const v=X?X.np_read_data(w.addr):0;
+    return `<div class="watchRow"><span class="wname">${w.label}</span><span class="waddr">0x${w.addr.toString(16).toUpperCase().padStart(2,"0")}</span><span class="wval">0x${v.toString(16).toUpperCase().padStart(2,"0")}</span><span class="wbin">${v.toString(2).padStart(8,"0")}</span><button class="wdel" data-i="${i}">×</button></div>`;
+  }).join("");
+  el.querySelectorAll(".wdel").forEach(b=>b.addEventListener("click",()=>{ watchList.splice(+b.dataset.i,1); saveWatch(); buildWatchView(); }));
+}
+function buildProgView(){
+  if(!X) return;
+  let last=0;
+  for(let a=0;a<2048;a++) if(X.np_prog_word(a)!==0x3FFF) last=a;
+  const n=Math.min(2048, Math.max(16, last+2)), rows=[];
+  for(let a=0;a<n;a++){
+    const word=X.np_prog_word(a);
+    const dn=X.np_disasm(word);
+    const txt=new TextDecoder().decode(new Uint8Array(X.memory.buffer, X.np_disasm_buffer(), dn));
+    rows.push(`<div class="progRow" data-a="${a}"><span class="pa">0x${a.toString(16).toUpperCase().padStart(3,"0")}</span><span class="pw">0x${word.toString(16).toUpperCase().padStart(4,"0")}</span><span class="pm">${txt}</span></div>`);
+  }
+  document.getElementById("dbgProg").innerHTML=rows.join("");
+  highlightPC();
+}
+function highlightPC(){
+  const prog=document.getElementById("dbgProg"); if(!prog||!X) return;
+  const cur=prog.querySelector(".progRow.pc"); if(cur) cur.classList.remove("pc");
+  const row=prog.querySelector(`.progRow[data-a="${X.np_pc()}"]`);
+  if(row){ row.classList.add("pc"); row.scrollIntoView({block:"nearest"}); }
+}
+function stepOnce(){
+  if(!X) return;
+  running=false; document.getElementById("runBtn").textContent="Ejecutar";
+  X.np_step();
+  const pa=X.np_read_porta(), pb=X.np_read_portb();
+  for(const c of components){ if(c.reset)c.reset(); if(c.sample)c.sample(pa,pb); if(c.integrate)c.integrate(1); }
+  refreshDebug();
+}
+document.getElementById("dbgToggle").addEventListener("click", ()=>{
+  dbgOpen=!dbgOpen;
+  document.getElementById("dbgPanel").classList.toggle("hidden", !dbgOpen);
+  document.getElementById("dbgToggle").textContent = (dbgOpen?"▾":"▸")+" Depurador";
+  if(dbgOpen){ buildProgView(); refreshDebug(); }
+});
+document.getElementById("stepBtn").addEventListener("click", stepOnce);
+document.querySelectorAll(".dbgTab").forEach(t=>t.addEventListener("click", ()=>{
+  dbgView=t.dataset.view;
+  document.querySelectorAll(".dbgTab").forEach(x=>x.classList.toggle("active", x===t));
+  document.querySelectorAll(".dbgView").forEach(v=>v.classList.add("hidden"));
+  document.getElementById("view-"+dbgView).classList.remove("hidden");
+  if(dbgView==="prog") buildProgView();
+  refreshDebug();
+}));
+document.getElementById("bank0").addEventListener("click", ()=>{ dbgBank=0; document.getElementById("bank0").classList.add("active"); document.getElementById("bank1").classList.remove("active"); buildDataView(); });
+document.getElementById("bank1").addEventListener("click", ()=>{ dbgBank=1; document.getElementById("bank1").classList.add("active"); document.getElementById("bank0").classList.remove("active"); buildDataView(); });
+document.getElementById("watchAdd").addEventListener("click", addWatch);
+document.getElementById("watchInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter") addWatch(); });
 function parseClock(s){ s=(s||"").trim().toLowerCase().replace(/hz$/,"").trim(); const m=/^([0-9]*\.?[0-9]+)\s*([kmg]?)$/.exec(s); if(!m)return null; const mult={k:1e3,m:1e6,g:1e9}[m[2]]||1; return Math.round(parseFloat(m[1])*mult); }
 function applyClock(){ const v=parseClock(document.getElementById("clock").value); const el=document.getElementById("clockVal");
   if(v&&v>0){ clockHz=v; if(X)X.np_set_clock_hz(v); el.textContent=v.toLocaleString("es-AR")+" Hz"; el.className="status ok"; }

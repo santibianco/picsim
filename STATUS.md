@@ -5,6 +5,15 @@ classroom (codename *New Proteus*). **Shipped and live:**
 <https://santibianco.github.io/SimuPIC/>. See `README.md` (overview), `DEPLOY.md`
 (hosting + Moodle), and `docs/architecture.md` (the load-bearing spec).
 
+## Session log (newest first) — update this at the end of each session
+
+- **2026-06-18** — Added a read-only **debugger (Depurador)**: core accessors
+  (`np_pc/np_w/np_cycles/np_read_data/np_prog_word/np_disasm/np_step` in `core/src/lib.rs`
+  + `wasm.rs`, unit-tested + checked by `verify-core.js`) and a collapsible runtime panel
+  with single-step and Programa / Datos / SFR / Vigilar tabs. Also: cross-frame brightness
+  persistence (slow-multiplex fix), the **SimuPIC** rename, and `embed-core.js` (a
+  PowerShell-safe replacement for the inline `node -e` embed). *Uncommitted at write time.*
+
 ## Layout
 
 - `core/` — Rust → WASM cycle-accurate simulation core (the heart). 82 tests.
@@ -13,6 +22,8 @@ classroom (codename *New Proteus*). **Shipped and live:**
   lab boards → the "pick a board" dropdown), `manifest.json` + `sw.js` + `icon.svg`
   (PWA), `authoring.html` (instructor-only diagram editor).
 - `serve.js` (project root) — tiny static server for local dev (`node serve.js`).
+- `embed-core.js` / `verify-core.js` — embed the built wasm into `core-wasm.js`, then
+  validate it (EEPROM + debugger fixtures). Always run `verify-core.js` after embedding.
 - `DEPLOY.md` + `.github/workflows/pages.yml` — GitHub Pages deploy + Moodle embed.
 - `examples/` — real MPLAB lab `.hex`/`.asm` pairs used as decode cross-checks.
 - `diagrams/` — JSON board definitions (architecture §6); `lab-counter.example.json`.
@@ -29,6 +40,10 @@ classroom (codename *New Proteus*). **Shipped and live:**
 - **Browser runtime**: DIP-18 board, LEDs / 7-seg / buttons, clock control, a
   "pick a board" lab dropdown (`labs.js`), JSON diagram loading, four demos, and a
   **Spanish (es-AR) UI**. Verified in-browser.
+- **Debugger (Depurador)**: collapsible read-only inspector for everyone — single-step
+  (`np_step`), live Ciclos/PC/W/STATUS header, program memory with disassembly + PC
+  highlight, data-memory grid (bank 0/1), named SFRs with bit breakdowns, and a watch/
+  filter (by address or register name, persisted in `localStorage`). Cycle-exact.
 - **EEPROM** (EECON1/EECON2 unlock; persists across reset/power-cycle). Demo
   climbs 1→2→3 across the Reset (power-cycle) button. (step 5)
 - **Authoring tool** (`runtime/authoring.html`, instructor-only): visual editor —
@@ -37,8 +52,8 @@ classroom (codename *New Proteus*). **Shipped and live:**
 - **PWA**: `manifest.json` + network-first `sw.js` (offline + installable) +
   responsive canvas. Deploy via `.github/workflows/pages.yml`; see `DEPLOY.md`.
 - **Deployed & live** at <https://santibianco.github.io/SimuPIC/> (GitHub Pages via
-  Action on every push); embeddable in Moodle. First instructor board bundled:
-  *TP - Simple*.
+  Action on every push); embeddable in Moodle. Bundled instructor boards:
+  *TP - Simple*, *TP - Dificil*.
 
 ## Build / test / run
 
@@ -50,9 +65,13 @@ cd core && cargo test
 cargo rustc --release --target wasm32-unknown-unknown --crate-type cdylib
 
 # 3. embed it so the page is self-contained (run from project root).
-#    GOTCHA: `cargo rustc --crate-type cdylib` writes the .wasm to release/DEPS/,
-#    not the top-level release/ dir — embed from deps/ (the freshly built one).
-node -e "const fs=require('fs');const b=fs.readFileSync('core/target/wasm32-unknown-unknown/release/deps/new_proteus_core.wasm').toString('base64');fs.writeFileSync('runtime/core-wasm.js','window.NP_WASM_BASE64=\"'+b+'\";');"
+#    GOTCHA: `cargo rustc --crate-type cdylib` writes the .wasm to release/DEPS/.
+#    Use the script — the old inline `node -e` one-liner gets mangled by PowerShell.
+node embed-core.js
+
+# 3b. VERIFY the embed before trusting it — validates the wasm and runs the EEPROM
+#     + debugger fixtures. Must print both ✓.
+node verify-core.js
 
 # 4. run the runtime
 node serve.js        # -> http://localhost:8080

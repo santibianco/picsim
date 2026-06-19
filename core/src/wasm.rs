@@ -107,3 +107,69 @@ pub extern "C" fn np_set_clock_hz(hz: u32) {
 pub extern "C" fn np_cycles_per_frame_60() -> u32 {
     sim().cycles_per_frame_60() as u32
 }
+
+// ---- debugger / inspection surface (read-only + single-step) ----
+// All read-only except `np_step`, which advances exactly one instruction
+// (cycle-exact). `verify-core.js` pins this contract.
+
+/// Program counter.
+#[no_mangle]
+pub extern "C" fn np_pc() -> u32 {
+    sim().pc() as u32
+}
+
+/// Working register W.
+#[no_mangle]
+pub extern "C" fn np_w() -> u32 {
+    sim().w() as u32
+}
+
+/// Instruction cycles since reset (truncated to 32 bits).
+#[no_mangle]
+pub extern "C" fn np_cycles() -> u32 {
+    sim().cycle_count() as u32
+}
+
+/// Data-memory byte at absolute physical address `0x000..=0x1FF`.
+#[no_mangle]
+pub extern "C" fn np_read_data(addr: u32) -> u32 {
+    sim().read_data(addr as usize) as u32
+}
+
+/// Program-flash word at `0x000..=0x7FF`.
+#[no_mangle]
+pub extern "C" fn np_prog_word(addr: u32) -> u32 {
+    sim().prog_word(addr as usize) as u32
+}
+
+/// Execute exactly one instruction; returns its cycle cost (0 if PC out of range).
+#[no_mangle]
+pub extern "C" fn np_step() -> u32 {
+    sim().step_one() as u32
+}
+
+const DISASM_BUF_LEN: usize = 32;
+static mut DISASM_BUF: [u8; DISASM_BUF_LEN] = [0; DISASM_BUF_LEN];
+
+/// Disassemble a 14-bit word into `np_disasm_buffer`; returns the byte length of
+/// the text (e.g. 11 for `"BSF 0x03, 5"`).
+#[no_mangle]
+pub extern "C" fn np_disasm(word: u32) -> u32 {
+    let s = crate::decode::disassemble((word & 0x3FFF) as u16);
+    let bytes = s.as_bytes();
+    let n = if bytes.len() < DISASM_BUF_LEN { bytes.len() } else { DISASM_BUF_LEN };
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            core::ptr::addr_of_mut!(DISASM_BUF) as *mut u8,
+            n,
+        );
+    }
+    n as u32
+}
+
+/// Pointer to the disassembly text buffer.
+#[no_mangle]
+pub extern "C" fn np_disasm_buffer() -> *mut u8 {
+    core::ptr::addr_of_mut!(DISASM_BUF) as *mut u8
+}

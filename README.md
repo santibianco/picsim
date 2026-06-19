@@ -26,6 +26,10 @@ Everything below is implemented, tested, and deployed.
 - **Browser runtime** — DIP-18 board with LEDs / 7-seg / buttons, processor-clock control,
   a "pick a board" lab selector, four built-in demos, and JSON diagram loading. **Spanish
   (es-AR) UI.** Installable **PWA** that runs fully offline after the first visit.
+- **Debugger (Depurador)** — a collapsible, read-only inspector for every student:
+  single-step (*Paso*), a live PC / W / STATUS / cycle header, program memory with
+  disassembly and a highlighted PC, the data-memory grid (bank 0/1), named SFRs with bit
+  breakdowns, and a watch/filter by address or register name. MPLAB-style and cycle-exact.
 - **Authoring tool** — instructor-only visual editor: place components, bind pins
   (per-segment for a 7-seg), set button polarity, and export the diagram JSON.
 - **Trust** — **82 Rust tests** plus cross-checks against real MPLAB lab `.hex`/`.asm` pairs.
