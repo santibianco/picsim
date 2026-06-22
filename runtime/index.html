@@ -171,6 +171,15 @@
   .watchRow .wdel{ margin-left:auto; background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:15px; line-height:1; }
   .watchRow .wdel:hover{ color:var(--err); }
   .cellEdit{ width:34px; background:var(--surface); color:var(--accent); border:1px solid var(--accent); border-radius:4px; font-family:ui-monospace,monospace; font-size:11px; padding:0 2px; }
+  .dbgStack{ background:var(--code-bg); border:1px solid var(--code-border); border-radius:10px; padding:8px 10px; }
+  .stkHead{ color:var(--text-faint); font-size:11px; margin-bottom:7px; }
+  .stkHead b{ color:var(--text); }
+  .stkRow{ display:flex; gap:10px; align-items:center; padding:2px 5px; border-radius:4px; }
+  .stkRow.top{ background:var(--accent-soft); }
+  .stkRow .sl{ width:16px; text-align:right; color:var(--code-addr); }
+  .stkRow .sv{ width:60px; color:var(--code-addr); }
+  .stkRow.used .sv{ color:var(--code-word); }
+  .stkRow .stag{ color:var(--accent); font-size:11px; }
 
   /* ===== responsive ===== */
   @media (max-width: 920px){
@@ -264,6 +273,7 @@
           <button class="dbgTab active" data-view="prog">Programa</button>
           <button class="dbgTab" data-view="data">Datos</button>
           <button class="dbgTab" data-view="sfr">SFR</button>
+          <button class="dbgTab" data-view="stack">Pila</button>
           <button class="dbgTab" data-view="watch">Vigilar</button>
         </div>
         <div id="view-prog" class="dbgView"><div id="dbgProg" class="dbgProg"></div></div>
@@ -274,6 +284,7 @@
           <div id="dbgData" class="dbgData"></div>
         </div>
         <div id="view-sfr" class="dbgView hidden"><div id="dbgSFR" class="dbgSFR"></div></div>
+        <div id="view-stack" class="dbgView hidden"><div id="dbgStack" class="dbgStack"></div></div>
         <div id="view-watch" class="dbgView hidden">
           <div class="watchBar">
             <input id="watchInput" type="text" placeholder="0x20 o PORTB" autocomplete="off" />
@@ -676,7 +687,20 @@ function refreshActiveView(){
   if(dbgView==="prog") highlightPC();
   else if(dbgView==="data") buildDataView();
   else if(dbgView==="sfr") buildSFRView();
+  else if(dbgView==="stack") buildStackView();
   else if(dbgView==="watch") buildWatchView();
+}
+function buildStackView(){
+  const el=document.getElementById("dbgStack"); if(!el||!X) return;
+  if(typeof X.np_stack_depth!=="function"){ el.innerHTML='<div class="watchEmpty">Pila no disponible: recompilá el núcleo WASM (núcleo viejo embebido).</div>'; return; }
+  const depth=X.np_stack_depth();
+  let html=`<div class="stkHead">Pila de retorno (CALL/RETURN) · profundidad <b>${depth}</b>/8</div>`;
+  for(let i=7;i>=0;i--){
+    const used=i<depth, top=i===depth-1;
+    const v=used?"0x"+X.np_stack_at(i).toString(16).toUpperCase().padStart(3,"0"):"—";
+    html+=`<div class="stkRow${used?" used":""}${top?" top":""}"><span class="sl">${i}</span><span class="sv">${v}</span><span class="stag">${top?"◂ tope":""}</span></div>`;
+  }
+  el.innerHTML=html;
 }
 const SFRS = [
   ["W",-1],

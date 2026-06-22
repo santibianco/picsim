@@ -83,6 +83,9 @@ A collapsible **"Depurador"** section under the board (a button expands it):
 - **Memory editing** — click a data-grid cell or an SFR value to write it live
   (`np_write_data` / `np_set_w` / `np_set_pc`); editing pauses the run so the refresh can't
   clobber the field.
+- **Hardware call stack (*Pila*)** — the PIC's 8-level CALL/RETURN stack as a debugger tab:
+  depth + the return address at each level, top marked. Core: `np_stack_depth` / `np_stack_at`
+  (the stack isn't memory-mapped, so it's exposed explicitly). Shipped later, same cycle.
 
 ## Not planned (by request)
 - **Symbol/variable names** and a **source-level view** are deliberately omitted, so

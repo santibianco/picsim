@@ -210,3 +210,16 @@ pub extern "C" fn np_set_w(val: u32) {
 pub extern "C" fn np_set_pc(addr: u32) {
     sim().set_pc(addr as u16);
 }
+
+// ---- debugger: hardware call-stack view ----
+
+/// Hardware-stack depth (0..=7): return addresses currently pushed.
+#[no_mangle]
+pub extern "C" fn np_stack_depth() -> u32 {
+    sim().stack_depth() as u32
+}
+/// Return address held at hardware-stack level `i` (0..=7).
+#[no_mangle]
+pub extern "C" fn np_stack_at(i: u32) -> u32 {
+    sim().stack_at(i as usize) as u32
+}

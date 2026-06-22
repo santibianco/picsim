@@ -9,8 +9,9 @@ wrong and the whole thing feels flaky in exactly the way SimulIDE does.
 > C-ABI exports are prefixed `np_` (e.g. `np_load_hex`, `np_run_cycles`,
 > `np_read_portb`, `np_set_pin`); the conceptual names below describe the contract,
 > not the literal symbols. A read-only **debugger surface** was layered on top
-> (single-step + memory/register inspection): `np_step`, `np_pc`, `np_w`, `np_cycles`,
-> `np_read_data`, `np_prog_word`, `np_disasm` — see `docs/inspector-plan.md`.
+> (single-step + memory / register / call-stack inspection): `np_step`, `np_pc`, `np_w`,
+> `np_cycles`, `np_read_data`, `np_prog_word`, `np_disasm`, `np_stack_depth`/`np_stack_at`
+> — see `docs/inspector-plan.md`.
 
 ---
 

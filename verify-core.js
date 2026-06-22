@@ -69,9 +69,29 @@ WebAssembly.instantiate(bytes, {}).then(({ instance }) => {
     );
   }
 
+  // (C) hardware call-stack surface (added 2026-06). Catches an OLD embed predating
+  //     the stack exports, which would disable the debugger's "Pila" view.
+  let stackOk = typeof X.np_stack_depth === "function" && typeof X.np_stack_at === "function";
+  if (!stackOk) {
+    console.log("stack exports: ✗ missing np_stack_depth/np_stack_at — rebuild the wasm");
+  } else {
+    const cp = ":020000000220DC\n:00000001FF\n"; // CALL 0x002 at 0x000 → pushes return 0x001
+    const cpd = new TextEncoder().encode(cp);
+    new Uint8Array(X.memory.buffer, X.np_hex_buffer(), cpd.length).set(cpd);
+    X.np_load_hex(cpd.length); X.np_reset();
+    const d0 = X.np_stack_depth();
+    X.np_step(); // execute the CALL
+    const d1 = X.np_stack_depth(), top = X.np_stack_at(0), pcs = X.np_pc();
+    stackOk = d0 === 0 && d1 === 1 && top === 1 && pcs === 2;
+    console.log(
+      `stack surface: depth ${d0}→${d1}, level 0 = 0x${top.toString(16)}, pc = 0x${pcs.toString(16)}`,
+      stackOk ? "✓ push/inspect OK" : "✗ unexpected — stale or broken embed"
+    );
+  }
+
   // Let Node exit naturally — process.exit() here races wasm/libuv teardown on
   // Windows and trips a (harmless but noisy) assertion. exitCode does the same job.
-  process.exitCode = eepromOk && dbgOk ? 0 : 1;
+  process.exitCode = eepromOk && dbgOk && stackOk ? 0 : 1;
 }).catch((e) => {
   console.error("✗ instantiate failed:", e.message);
   process.exitCode = 1;

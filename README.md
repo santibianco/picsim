@@ -29,7 +29,8 @@ Everything below is implemented, tested, and deployed.
 - **Debugger (Depurador)** — a collapsible, read-only inspector for every student:
   single-step (*Paso*), a live PC / W / STATUS / cycle header, program memory with
   disassembly and a highlighted PC, the data-memory grid (bank 0/1), named SFRs with bit
-  breakdowns, and a watch/filter by address or register name. MPLAB-style and cycle-exact.
+  breakdowns, the 8-level **hardware call stack** (*Pila*), breakpoints + live memory editing,
+  and a watch/filter by address or register name. MPLAB-style and cycle-exact.
 - **Authoring tool** — instructor-only visual editor: place components, bind pins
   (per-segment for a 7-seg), set button polarity, and export the diagram JSON.
 - **Trust** — **82 Rust tests** plus cross-checks against real MPLAB lab `.hex`/`.asm` pairs.

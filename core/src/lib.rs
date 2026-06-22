@@ -209,6 +209,12 @@ impl Core {
     pub fn clear_breaks(&mut self) { self.cpu.clear_breaks(); }
     /// Whether the last `run_cycles` stopped at a breakpoint.
     pub fn break_hit(&self) -> bool { self.cpu.break_hit }
+
+    /// Hardware call-stack for the debugger's stack view (the PIC's 8-level stack
+    /// isn't memory-mapped, so it's exposed here): depth (0..=7) + the return
+    /// address held at each level (0..=7).
+    pub fn stack_depth(&self) -> u8 { self.cpu.stack_depth() }
+    pub fn stack_at(&self, i: usize) -> u16 { self.cpu.stack_at(i) }
 }
 
 impl Default for Core {
@@ -296,5 +302,17 @@ mod tests {
         assert_eq!(core.read_data(0x20), 0xAB);
         core.set_w(0x5A);
         assert_eq!(core.w(), 0x5A);
+    }
+
+    #[test]
+    fn stack_view_surface() {
+        let mut core = Core::new();
+        // CALL 0x002 at 0x000 (opcode 0x2002), then NOPs.
+        core.cpu_mut().program = vec![0x2002, 0x0000, 0x0000];
+        assert_eq!(core.stack_depth(), 0);
+        core.step_one(); // execute CALL: push return 0x001, jump to 0x002
+        assert_eq!(core.stack_depth(), 1);
+        assert_eq!(core.stack_at(0), 0x001);
+        assert_eq!(core.pc(), 0x002);
     }
 }

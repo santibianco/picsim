@@ -229,6 +229,15 @@ impl Cpu {
         self.sp = self.sp.wrapping_sub(1) & 0x07;
         self.stack[self.sp as usize]
     }
+    /// Hardware-stack depth (the stack pointer, 0..=7): how many return addresses
+    /// are pushed. 0 = empty; wraps on overflow like the real 8-level stack.
+    pub fn stack_depth(&self) -> u8 {
+        self.sp
+    }
+    /// Return address held at hardware-stack level `i` (0..=7).
+    pub fn stack_at(&self, i: usize) -> u16 {
+        self.stack[i & 0x07]
+    }
     fn set_z(&mut self, r: u8) {
         self.mem.set_flag(STATUS_Z, r == 0);
     }

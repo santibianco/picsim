@@ -7,6 +7,14 @@ classroom (codename *New Proteus*). **Shipped and live:**
 
 ## Session log (newest first) — update this at the end of each session
 
+- **2026-06-18 (stack view)** — Added the debugger's **"Pila" view** — the PIC's 8-level CALL/RETURN
+  hardware stack, showing depth + the return address at each level (top marked). Needs a **core
+  change** (the stack isn't memory-mapped): `Cpu::stack_depth`/`stack_at` → `Core` → WASM
+  `np_stack_depth`/`np_stack_at` (`core/src/{cpu,lib,wasm}.rs`), a `stack_view_surface` unit test
+  (→ 83 tests), and a `verify-core.js` part (C). Runtime `index.html` has the Pila tab/view; it
+  degrades to a "recompilá el núcleo" note on an old core. **Done: rebuilt + embedded (59,884-byte
+  wasm); `verify-core.js` all ✓ incl. `stack surface … ✓`; 83 tests green; verified live in-browser
+  — a CALL shows depth 0→1, level 0 = 0x001, top marked.** *Uncommitted.*
 - **2026-06-18 (persistence of vision)** — Reworked 7-seg brightness to model **honest persistence
   of vision** (`runtime/index.html`). Each segment decays toward 0 with a ~45 ms time constant (the
   eye's persistence) and is pulled to full while *actually lit* (its digit selected AND the segment
@@ -120,8 +128,9 @@ classroom (codename *New Proteus*). **Shipped and live:**
   Verified in-browser.
 - **Debugger (Depurador)**: collapsible read-only inspector for everyone — single-step
   (`np_step`), live Ciclos/PC/W/STATUS header, program memory with disassembly + PC
-  highlight, data-memory grid (bank 0/1), named SFRs with bit breakdowns, and a watch/
-  filter (by address or register name, persisted in `localStorage`). Cycle-exact.
+  highlight, data-memory grid (bank 0/1), named SFRs with bit breakdowns, the 8-level
+  hardware call stack (*Pila*), breakpoints + live memory editing, and a watch/filter (by
+  address or register name, persisted in `localStorage`). Cycle-exact.
 - **EEPROM** (EECON1/EECON2 unlock; persists across reset/power-cycle). Demo
   climbs 1→2→3 across the Reset (power-cycle) button. (step 5)
 - **Authoring tool** (`runtime/authoring.html`, instructor-only): visual editor —
