@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#0d1117" />
+<meta name="theme-color" content="#eef1f8" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <title>SimuPIC — PIC16F628A simulator</title>
@@ -191,13 +191,12 @@
   }
 </style>
 <script>
-  /* Apply the saved / preferred theme before first paint (no flash of the wrong theme). */
+  /* Apply the saved theme before first paint (no flash). New users default to light;
+     a student's own toggle (saved in np_theme) is always respected. */
   (function(){
     try{
-      var t = localStorage.getItem("np_theme");
-      if(!t) t = (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", t);
-    }catch(e){ document.documentElement.setAttribute("data-theme","dark"); }
+      document.documentElement.setAttribute("data-theme", localStorage.getItem("np_theme") || "light");
+    }catch(e){ document.documentElement.setAttribute("data-theme","light"); }
   })();
 </script>
 </head>

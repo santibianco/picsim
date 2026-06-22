@@ -79,8 +79,8 @@ classroom (codename *New Proteus*). **Shipped and live:**
   8-LED demo. *Uncommitted.*
 - **2026-06-18 (UI revamp)** — Reworked the runtime UI (`runtime/index.html`, CSS + layout
   only — **no core/wasm change**): **dark + light themes** via CSS variables with a **toggle**
-  in the app bar (persisted in `localStorage` `np_theme`, no-flash inline head script,
-  defaults to `prefers-color-scheme`); a **restructured layout** — top app bar (brand + theme
+  in the app bar (persisted in `localStorage` `np_theme`, no-flash inline head script; **new
+  users default to light**, a saved toggle is respected); a **restructured layout** — top app bar (brand + theme
   switch) · left side-rail with Placa / Simulación / Archivos cards + status · centered board ·
   docked Depurador panel; and a friendlier "classroom" style (rounded cards, softer surfaces,
   indigo accent, larger controls). All element IDs / JS hooks preserved. Verified in-browser in
