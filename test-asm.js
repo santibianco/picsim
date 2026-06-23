@@ -5,7 +5,9 @@
 // wherever both our output and MPLAB's define a program word, they must agree.
 // (MPLAB may emit extra fill words and a config word from a slightly different
 // source revision; those are reported but not failed, and the config word does
-// not affect simulation.) The macro/cblock example must be rejected cleanly.
+// not affect simulation.) The CBLOCK/#define/MACRO example (TP 2022) ships with a
+// drifted .hex that doesn't correspond to its .asm, so it is only checked to
+// assemble — it's diffed byte-for-byte against the real MPASMWIN.exe separately.
 //
 // Run:  node test-asm.js [path/to/examples]
 "use strict";
@@ -19,7 +21,7 @@ const CASES = [
   { dir: "Simple one",     asm: "Punto A.asm",             hex: "Punto A.hex",            expect: "ok" },
   { dir: "Multiplication", asm: "Multiplicacion.asm",      hex: "mult.hex",               expect: "ok" },
   { dir: "Larger one",     asm: "TP-turnos-solucion.asm",  hex: "Solucion.hex",           expect: "ok" },
-  { dir: "Another large",  asm: "TP 2022 - Ejemplo.asm",   hex: "TP 2022 - Ejemplo.hex",  expect: "reject" },
+  { dir: "Another large",  asm: "TP 2022 - Ejemplo.asm",   hex: null,                     expect: "assembles" },
 ];
 
 // Decode Intel HEX into { words: Map(wordAddr->14bit), config }.
@@ -57,10 +59,9 @@ for (const c of CASES) {
   const src = fs.readFileSync(asmPath, "utf8");
   const res = assemble(src);
 
-  if (c.expect === "reject") {
-    const ok = !res.ok && /no esta soportado|MPLAB/i.test(res.error || "");
-    console.log(`${ok ? "PASS" : "FAIL"}  ${c.asm} — rechazo limpio`);
-    console.log(`        -> ${res.ok ? "(se ensamblo, no deberia!)" : res.error}`);
+  if (c.expect === "assembles") {
+    const ok = res.ok && res.words.size > 0;
+    console.log(`${ok ? "PASS" : "FAIL"}  ${c.asm} — ensambla (${res.ok ? res.words.size + " palabras, config " + hx(res.config || 0) : res.error})`);
     if (!ok) failed++;
     continue;
   }

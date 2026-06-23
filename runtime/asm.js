@@ -92,7 +92,6 @@
 
   // Directives we recognise but don't yet support — reject with a clear note.
   const UNSUPPORTED = {
-    CBLOCK:"CBLOCK/ENDC", ENDC:"CBLOCK/ENDC", MACRO:"MACRO/ENDM", ENDM:"MACRO/ENDM",
     DT:"DT", DA:"DA", DW:"DW", DE:"DE", FILL:"FILL", RES:"RES"
   };
 
@@ -230,6 +229,103 @@
     return { n, label, mnem, mnemUp: mnem ? mnem.toUpperCase() : null, operandStr };
   }
 
+  // ===== Phase 2 preprocessing: CBLOCK, #define text macros, MACRO/ENDM =====
+
+  // Repeatedly replace identifier tokens that are keys in `subst` with their text,
+  // until stable — so a #define can expand to another #define (or a macro param).
+  function applyDefines(text, subst, line) {
+    if (subst.size === 0) return text;
+    let cur = text;
+    for (let pass = 0; pass < 60; pass++) {
+      let changed = false;
+      const next = cur.replace(/[A-Za-z_?][\w?]*/g, function (tok) {
+        if (subst.has(tok)) { changed = true; return subst.get(tok); }
+        return tok;
+      });
+      if (!changed) return next;
+      cur = next;
+    }
+    throw new AsmError(line, "expansion de #define/macro circular");
+  }
+
+  // Light parse used only during expansion: optional column-1 label, then the
+  // mnemonic. A known macro name in column 1 is the operation, not a label.
+  function preParse(text, macros) {
+    const col0 = /^\S/.test(text);
+    let t = text.trim(), label = null, m;
+    if ((m = t.match(/^([A-Za-z_?][\w?]*)\s*:([\s\S]*)$/))) { label = m[1]; t = m[2].trim(); }
+    else if (col0 && (m = t.match(/^([A-Za-z_?][\w?]*)\b([\s\S]*)$/))) {
+      const w = m[1], up = w.toUpperCase();
+      if (!macros.has(w) && !(up in OPS) && !isDirective(up) && up !== "END" && m[2].trim() !== "") { label = w; t = m[2].trim(); }
+    }
+    const mm = t.match(/^(\S+)\s*([\s\S]*)$/);
+    return { label: label, mnem: mm ? mm[1] : null, operandStr: mm ? mm[2].trim() : "" };
+  }
+
+  // Expand one raw line into >=0 plain lines (macros expanded, #defines applied).
+  function expandLine(raw, defines, macros, out, n, depth) {
+    if (depth > 60) throw new AsmError(n, "expansion de macro demasiado anidada");
+    let text = stripComment(raw);
+    if (text.trim() === "") return;
+    text = applyDefines(text, defines, n);
+    const p = preParse(text, macros);
+    if (p.mnem && macros.has(p.mnem)) {
+      if (p.label) out.push({ text: p.label, n: n });
+      const mac = macros.get(p.mnem);
+      const args = p.operandStr ? splitOps(p.operandStr) : [];
+      const local = new Map(defines);
+      mac.params.forEach(function (pm, i) { local.set(pm, args[i] !== undefined ? args[i] : ""); });
+      for (let k = 0; k < mac.body.length; k++) expandLine(mac.body[k], local, macros, out, n, depth + 1);
+    } else {
+      out.push({ text: text, n: n });
+    }
+  }
+
+  // Walk the raw lines, building #define / MACRO / CBLOCK tables and emitting the
+  // fully expanded line list (each {text, n}).
+  function preprocess(rawLines) {
+    const defines = new Map(), macros = new Map(), out = [];
+    let cblock = null, macroDef = null;
+    const numOnly = function (name, line) { throw new AsmError(line, "simbolo no permitido aca: \"" + name + "\""); };
+    for (let i = 0; i < rawLines.length; i++) {
+      const n = i + 1, raw = rawLines[i], t = stripComment(raw).trim();
+      if (macroDef) {
+        if (/^ENDM\b/i.test(t)) { macros.set(macroDef.name, { params: macroDef.params, body: macroDef.body }); macroDef = null; }
+        else macroDef.body.push(raw);
+        continue;
+      }
+      if (cblock !== null) {
+        if (/^ENDC\b/i.test(t)) { cblock = null; continue; }
+        if (t !== "") {
+          const parts = t.split(",");
+          for (let j = 0; j < parts.length; j++) {
+            const e = parts[j].trim(); if (!e) continue;
+            const m = e.match(/^([A-Za-z_?][\w?]*)\s*(?::\s*([\s\S]+))?$/);
+            if (!m) throw new AsmError(n, "entrada de CBLOCK invalida: \"" + e + "\"");
+            out.push({ text: m[1] + " EQU 0x" + (cblock & 0x3FFF).toString(16), n: n });
+            cblock += m[2] ? evalExpr(applyDefines(m[2], defines, n), numOnly, n) : 1;
+          }
+        }
+        continue;
+      }
+      if (t === "") continue;
+      if (t.charAt(0) === "#") {
+        if (/^#\s*include\b/i.test(t)) continue;
+        let m;
+        if ((m = t.match(/^#\s*define\s+([A-Za-z_?][\w?]*)\s*([\s\S]*)$/i))) { defines.set(m[1], (m[2] || "").trim()); continue; }
+        if ((m = t.match(/^#\s*undefine\s+([A-Za-z_?][\w?]*)/i))) { defines.delete(m[1]); continue; }
+        throw new AsmError(n, "directiva de preprocesador no soportada: \"" + t + "\"");
+      }
+      if (/^CBLOCK\b/i.test(t)) { cblock = evalExpr(applyDefines(t.replace(/^CBLOCK\s*/i, "") || "0", defines, n), numOnly, n) & 0x3FFF; continue; }
+      const md = t.match(/^([A-Za-z_?][\w?]*)\s+MACRO\b\s*([\s\S]*)$/i);
+      if (md) { macroDef = { name: md[1], params: md[2].split(",").map(function (x) { return x.trim(); }).filter(Boolean), body: [], startLine: n }; continue; }
+      expandLine(raw, defines, macros, out, n, 0);
+    }
+    if (macroDef) throw new AsmError(macroDef.startLine, "falta ENDM para la macro \"" + macroDef.name + "\"");
+    if (cblock !== null) throw new AsmError(rawLines.length, "falta ENDC para cerrar el CBLOCK");
+    return out;
+  }
+
   function assemble(src) {
     try { return assembleInner(src); }
     catch (e) {
@@ -241,20 +337,10 @@
   function assembleInner(src) {
     const rawLines = src.replace(/\r\n?/g, "\n").split("\n");
 
-    // Pre-scan raw '#' lines: accept #include, reject #define/#undefine/etc.
+    // Preprocess: expand CBLOCK/ENDC, #define text macros, and MACRO/ENDM into a
+    // flat list of plain source lines (each carrying a line number for errors).
     const lines = [];
-    for (let i = 0; i < rawLines.length; i++) {
-      const ln = i + 1, raw = rawLines[i];
-      if (isHashLine(raw)) {
-        const h = stripComment(raw).trim();
-        if (/^#\s*include\b/i.test(h)) continue;            // chip symbols are built in
-        if (/^#\s*(define|undefine)\b/i.test(h))
-          throw new AsmError(ln, "#define todavia no esta soportado en el editor: compila este programa en MPLAB por ahora.");
-        throw new AsmError(ln, "directiva de preprocesador no soportada: \"" + h + "\"");
-      }
-      const p = parseLine(raw, ln);
-      if (p) lines.push(p);
-    }
+    for (const e of preprocess(rawLines)) { const p = parseLine(e.text, e.n); if (p) lines.push(p); }
 
     const symbols = Object.create(null);   // user EQU/SET + labels
     function resolve(name, line) {

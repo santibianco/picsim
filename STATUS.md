@@ -7,6 +7,22 @@ classroom (codename *New Proteus*). **Shipped and live:**
 
 ## Session log (newest first) — update this at the end of each session
 
+- **2026-06-23 (ASM editor — Phase 2: macros)** — The in-browser assembler now handles the full MPASM
+  preprocessor the labs use: **`CBLOCK`/`ENDC`** (auto-incrementing RAM allocation → synthetic EQUs),
+  **`#define`** text macros (incl. multi-token values like `PORTB,0` and instruction-valued ones like
+  `CLRF PORTA`, substituted recursively), and **`MACRO`/`ENDM`** with parameters (invocations expanded
+  with arg substitution; bodies re-preprocessed for nested #defines/macros; a label on the invocation
+  line is handled). Added as a preprocessing pass in `runtime/asm.js` (`preprocess` / `expandLine` /
+  `applyDefines` / `preParse`) that runs before the existing two passes — no change to encoding or timing.
+  `DT`/`DW`/`DE`/`FILL`/`RES` stay out of scope (clean reject). **Validated byte-for-byte against the REAL
+  compiler:** ran the installed `MPASMWIN.exe` on all four example labs via `mpe2e/run.bat` and diffed —
+  **Punto A 9/9, Multiplicación 10/10, TP-turnos 107/107, and the macro/CBLOCK/#define TP 2022 119/119
+  program words + config word, zero diffs, zero extra words.** (Heads-up: `examples/Another large/TP 2022
+  - Ejemplo.hex` is a *non-corresponding* revision — 0/119 vs the `.asm` — so `test-asm.js` only checks
+  TP 2022 *assembles*; the MPASM diff is the real check. The other 3 `.hex` pairs still match with the
+  usual 2 fill-word drift.) `test-asm.js` updated (TP 2022 case reject→assembles). `S:\New Proteus\mpe2e\`
+  is throwaway MPASM-comparison scratch (safe to delete / gitignore). *Uncommitted.*
+
 - **2026-06-23 (built-in ASM editor)** — Added an in-browser **"Editor de código (ASM)"** so students
   can write MPASM and compile to a runnable `.hex` on their phone, no MPLAB needed. **New
   `runtime/asm.js`** — a pure-JS two-pass PIC16F628A assembler: all 35 instructions, labels, `EQU`/`SET`,
