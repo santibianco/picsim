@@ -244,7 +244,7 @@
   .dockResize:hover::before, .dockResize.drag::before{ background:var(--accent); }
   .dockInner{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px;
     background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:12px;
-    box-shadow:var(--shadow-sm); max-height:calc(100vh - 90px); }
+    box-shadow:var(--shadow-sm); height:calc(100vh - 90px); max-height:calc(100vh - 90px); }
   .dockBar{ display:flex; align-items:center; gap:8px; }
   .dockTitle{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); }
   .dockSpacer{ flex:1; }
@@ -275,6 +275,13 @@
   .dbgPanes.single{ grid-template-columns:1fr; }
   .dbgPanes.single .dbgPane.paneB{ display:none; }
   .dbgPanes.single .paneSplit{ display:grid; }
+  /* dock blocks: Depurador + Código stack and share the dock height; either can be closed independently */
+  .dockBlock{ flex:1 1 0; min-height:0; display:flex; flex-direction:column; gap:10px; }
+  .dockBlock.hidden{ display:none; }
+  .dockBlockBar{ display:flex; align-items:center; gap:8px; }
+  .dockBlock:not(.hidden) + .dockBlock:not(.hidden){ border-top:1px solid var(--border-soft); padding-top:12px; }
+  /* ASM editor, docked: the textarea fills the block height */
+  #dockEditor .edSrc{ flex:1 1 auto; min-height:120px; resize:none; }
 
   /* ===== responsive ===== */
   /* below 1200px: debugger un-docks to a full-width panel under the stage; single pane (dual-view is desktop-only) */
@@ -282,7 +289,9 @@
     .layout{ grid-template-columns: var(--rail-w) minmax(0,1fr); grid-template-areas:"rail stage" "dock dock"; }
     .layout.no-dock{ grid-template-columns: var(--rail-w) minmax(0,1fr); grid-template-areas:"rail stage"; }
     .dock{ position:static; max-height:none; }
-    .dockInner{ max-height:none; }
+    .dockInner{ height:auto; max-height:none; }
+    .dockBlock{ flex:0 0 auto; }                       /* stack by content when un-docked */
+    #dockEditor .edSrc{ min-height:300px; }
     .dockResize{ display:none; }
     .dbgPanes{ grid-template-columns:1fr; }
     .dbgPane.paneB{ display:none; }
@@ -290,11 +299,21 @@
     .dbgPaneBody{ max-height:62vh; }
   }
   @media (max-width: 920px){
-    .layout{ grid-template-columns:1fr; grid-template-areas:"rail" "stage" "dock"; padding:14px; gap:14px; }
-    .layout.no-dock{ grid-template-columns:1fr; grid-template-areas:"rail" "stage"; }
-    .rail{ position:static; flex-direction:row; flex-wrap:wrap; }
-    .rail .card{ flex:1 1 240px; }
-    .rail>#status{ flex:1 1 100%; }
+    /* mobile order, top→down: Placa · Archivos · board · Simulación · status */
+    .layout{ grid-template-columns:1fr; grid-template-areas:"placa" "archivos" "stage" "sim" "status" "dock"; padding:14px; gap:14px; }
+    .layout.no-dock{ grid-template-columns:1fr; grid-template-areas:"placa" "archivos" "stage" "sim" "status"; }
+    .rail{ display:contents; }                 /* cards become direct grid items so they can be reordered around the board */
+    #placaCard{ grid-area:placa; }
+    #archivosCard{ grid-area:archivos; }
+    #simCard{ grid-area:sim; }
+    #status{ grid-area:status; }
+  }
+  /* phones: icon-only navbar toggles (the labels won't fit) + a tighter bar */
+  @media (max-width: 640px){
+    .appbar{ padding:10px 14px; gap:8px; }
+    .barbtn{ width:38px; padding:0; gap:0; justify-content:center; }
+    .barbtn .barbtn-tx{ display:none; }
+    .brand-tag{ display:none; }
   }
 </style>
 <script>
@@ -319,8 +338,19 @@
       <span class="brand-tag">PIC16F628A</span>
     </div>
     <div class="appbar-spacer"></div>
-    <button id="dockToggle" class="barbtn" title="Mostrar u ocultar el depurador" aria-label="Mostrar u ocultar el depurador" aria-pressed="true" disabled>
-      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><line x1="14.5" y1="4.5" x2="14.5" y2="19.5" stroke="currentColor" stroke-width="1.7"/></svg>
+    <button id="toggleEditor" class="barbtn" title="Mostrar u ocultar el editor de código" aria-label="Editor de código" aria-pressed="false">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M9 8.5 5.5 12 9 15.5M15 8.5 18.5 12 15 15.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="barbtn-tx">Código</span>
+    </button>
+    <button id="toggleDebug" class="barbtn active" title="Mostrar u ocultar el depurador" aria-label="Depurador" aria-pressed="true">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/>
+        <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/>
+        <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/>
+        <path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/>
+        <path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/>
+        <path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>
+      </svg>
       <span class="barbtn-tx">Depurador</span>
     </button>
     <button id="themeBtn" class="iconbtn" title="Cambiar tema (claro / oscuro)" aria-label="Cambiar tema">
@@ -331,12 +361,12 @@
 
   <div class="layout">
     <aside class="rail">
-      <div class="card">
+      <div class="card" id="placaCard">
         <div class="card-title">Placa</div>
         <select id="labSelect" class="select" disabled></select>
       </div>
 
-      <div class="card">
+      <div class="card" id="simCard">
         <div class="card-title">Simulación</div>
         <div class="transport" role="group" aria-label="Controles de simulación">
           <button id="playPauseBtn" class="tbtn" title="Ejecutar (Espacio)" aria-label="Ejecutar" disabled>
@@ -356,7 +386,7 @@
         <div id="simReadout" class="readout">00:00:000</div>
       </div>
 
-      <div class="card">
+      <div class="card" id="archivosCard">
         <div class="card-title">Archivos</div>
         <div class="file-list">
           <span id="wasmWrap"><label class="file btn btn-block">Cargar núcleo (.wasm)<input id="wasmFile" type="file" accept=".wasm" /></label></span>
@@ -379,31 +409,16 @@
         </div>
       </div>
       <div class="board-hint">Rueda o pellizco para hacer zoom · arrastrá para mover · doble clic para ajustar</div>
-
-      <button id="edToggle" class="dbgToggle" disabled>▸ Editor de código (ASM)</button>
-      <div id="edPanel" class="dbgPanel edPanel hidden">
-        <div class="edBar">
-          <span class="edTitle">Escribí tu programa en assembler y compilalo a .hex — corre en la placa al instante.</span>
-          <span class="edSpacer"></span>
-          <input id="edFile" type="file" accept=".asm,.inc,.txt" style="display:none" />
-          <button id="edOpen" class="btn">Abrir .asm</button>
-          <button id="edDownload" class="btn">Descargar .asm</button>
-          <button id="edBuild" class="btn btn-primary">Compilar y cargar ▸</button>
-        </div>
-        <textarea id="edSrc" class="edSrc" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"
-          placeholder="; Escribí tu código MPASM acá, o elegí un ejemplo en «Placa»."></textarea>
-        <div id="edStatus" class="edStatus"></div>
-      </div>
-
     </main>
 
     <aside class="dock" id="dock">
       <div class="dockResize" id="dockResize" title="Arrastrá para cambiar el ancho"></div>
       <div class="dockInner">
-        <div class="dockBar">
+        <section id="dockDebug" class="dockBlock">
+        <div class="dockBlockBar">
           <span class="dockTitle">Depurador</span>
           <span class="dockSpacer"></span>
-          <button id="dockClose" class="dockIcon" title="Ocultar el depurador" aria-label="Ocultar el depurador">✕</button>
+          <button id="closeDebug" class="dockIcon" title="Cerrar el depurador" aria-label="Cerrar el depurador">✕</button>
         </div>
         <div class="dbgHead">
           <div class="dbgRegs">
@@ -435,6 +450,24 @@
             <div class="dbgPaneBody" data-pane="B"></div>
           </section>
         </div>
+        </section><!-- /#dockDebug -->
+
+        <section id="dockEditor" class="dockBlock edPanel hidden">
+          <div class="dockBlockBar">
+            <span class="dockTitle">Código (ASM)</span>
+            <span class="dockSpacer"></span>
+            <button id="closeEditor" class="dockIcon" title="Cerrar el editor" aria-label="Cerrar el editor">✕</button>
+          </div>
+          <div class="edBar">
+            <input id="edFile" type="file" accept=".asm,.inc,.txt" style="display:none" />
+            <button id="edBuild" class="btn btn-primary">Compilar y cargar ▸</button>
+            <button id="edOpen" class="btn">Abrir .asm</button>
+            <button id="edDownload" class="btn">Descargar .asm</button>
+          </div>
+          <textarea id="edSrc" class="edSrc" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"
+            placeholder="; Escribí tu código MPASM acá, o elegí un ejemplo en «Placa»."></textarea>
+          <div id="edStatus" class="edStatus"></div>
+        </section>
       </div>
     </aside>
   </div>
@@ -982,7 +1015,7 @@ requestAnimationFrame(frame);
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function setStatus(m,c){ statusEl.textContent=m; statusEl.className="status "+(c||""); }
 function enable(ids,on){ ids.forEach((id)=>document.getElementById(id).disabled=!on); }
-function coreReady(){ populateLabs(); enable(["labSelect","dockToggle","edToggle","stepBtn","step10","step100"],true); if(dbgOpen){ rebuildProg(); refreshDebug(); } }
+function coreReady(){ populateLabs(); enable(["labSelect","stepBtn","step10","step100"],true); if(dbgOpen){ rebuildProg(); refreshDebug(); } }
 function setDiagram(d){ components=build(d); resetView(); }
 function afterHex(ok,name){ if(!ok){ setStatus("No se pudo leer "+name,"err"); return; }
   X.np_reset(); for(const c of components) if(c.idle) c.idle();
@@ -1029,9 +1062,7 @@ document.getElementById("labSelect").addEventListener("change", (e)=>{
   const lab=LABS[+v];
   setClock(lab.clock||"4 MHz");
   setDiagram(lab.diagram);
-  if(lab.asm){ edSrcEl.value=lab.asm; edSave(); edOpen=true;
-    document.getElementById("edPanel").classList.remove("hidden");
-    document.getElementById("edToggle").textContent="▾ Editor de código (ASM)"; }
+  if(lab.asm){ edSrcEl.value=lab.asm; edSave(); showEditor(true); }
   if(lab.hex){
     afterHex(loadHex(lab.hex), lab.name);
     if(/eeprom/i.test(lab.name)) setStatus("Cargado "+lab.name+" ✓ — apretá Detener (■) para cortar la energía y volvé a Ejecutar; el conteo se mantiene.","ok");
@@ -1194,6 +1225,28 @@ function setSplit(on){
   try{ localStorage.setItem("np_split", on?"1":"0"); }catch(e){}
   if(on) renderPane("B", true);
 }
+// the dock holds two independent blocks (Depurador + Código); each opens/closes on its own,
+// so a student can have the debugger and the editor visible at the same time.
+let edPanelOpen=false;
+function syncDock(){
+  const layout=document.querySelector(".layout"); if(layout) layout.classList.toggle("no-dock", !(dbgOpen||edPanelOpen));
+  const td=document.getElementById("toggleDebug"), te=document.getElementById("toggleEditor");
+  if(td){ td.classList.toggle("active", dbgOpen); td.setAttribute("aria-pressed", dbgOpen?"true":"false"); }
+  if(te){ te.classList.toggle("active", edPanelOpen); te.setAttribute("aria-pressed", edPanelOpen?"true":"false"); }
+}
+function showDebug(on){
+  dbgOpen=on;
+  const el=document.getElementById("dockDebug"); if(el) el.classList.toggle("hidden", !on);
+  try{ localStorage.setItem("np_dock", on?"1":"0"); }catch(e){}
+  syncDock();
+  if(on && X){ rebuildProg(); refreshDebug(); }
+}
+function showEditor(on){
+  edPanelOpen=on;
+  const el=document.getElementById("dockEditor"); if(el) el.classList.toggle("hidden", !on);
+  try{ localStorage.setItem("np_editor", on?"1":"0"); }catch(e){}
+  syncDock();
+}
 
 // stepping
 function snapBoard(){ if(!X) return; const pa=X.np_read_porta(), pb=X.np_read_portb(); for(const c of components){ if(c.reset)c.reset(); if(c.sample)c.sample(pa,pb); if(c.integrate)c.integrate(1); } }
@@ -1243,16 +1296,7 @@ panesEl.addEventListener("click",(e)=>{
 });
 panesEl.addEventListener("keydown",(e)=>{ if(e.key==="Enter" && e.target.classList && e.target.classList.contains("watchInput")){ e.preventDefault(); const paneEl=e.target.closest(".dbgPane"); if(paneEl) addWatchFromPane(paneEl); } });
 
-// dock show/hide + width drag
-function setDock(open){
-  dbgOpen=open;
-  const layout=document.querySelector(".layout"); if(layout) layout.classList.toggle("no-dock", !open);
-  const t=document.getElementById("dockToggle"); if(t){ t.classList.toggle("active", open); t.setAttribute("aria-pressed", open?"true":"false"); }
-  try{ localStorage.setItem("np_dock", open?"1":"0"); }catch(e){}
-  if(open && X){ rebuildProg(); refreshDebug(); }
-}
-document.getElementById("dockToggle").addEventListener("click", ()=> setDock(!dbgOpen));
-document.getElementById("dockClose").addEventListener("click", ()=> setDock(false));
+// dock width drag
 (function dockResizeInit(){
   const handle=document.getElementById("dockResize"), layout=document.querySelector(".layout");
   if(!handle||!layout) return;
@@ -1265,15 +1309,19 @@ document.getElementById("dockClose").addEventListener("click", ()=> setDock(fals
   handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
 })();
 
-// init panes + dock state (dock open by default on desktop, closed on small screens; saved choice wins)
+// init panes + dock blocks (Depurador + Código toggle independently; saved choice wins)
 populatePaneSelects();
 document.getElementById("paneClose").addEventListener("click", ()=> setSplit(false));   // ✕ on pane B
 document.getElementById("paneSplit").addEventListener("click", ()=> setSplit(true));     // ⊞ on pane A (visible when single)
 setSplit(dbgSplit);
-(function initDock(){
-  const t=document.getElementById("dockToggle"); if(t) t.disabled=false;
-  let open; try{ const s=localStorage.getItem("np_dock"); open = (s==null) ? window.matchMedia("(min-width:1200px)").matches : s==="1"; }catch(e){ open=true; }
-  setDock(open);
+document.getElementById("toggleDebug").addEventListener("click", ()=> showDebug(!dbgOpen));
+document.getElementById("toggleEditor").addEventListener("click", ()=> showEditor(!edPanelOpen));
+document.getElementById("closeDebug").addEventListener("click", ()=> showDebug(false));
+document.getElementById("closeEditor").addEventListener("click", ()=> showEditor(false));
+(function initDockState(){
+  let d; try{ const s=localStorage.getItem("np_dock"); d = (s==null) ? window.matchMedia("(min-width:1200px)").matches : s==="1"; }catch(e){ d=true; }
+  let ed=false; try{ ed = localStorage.getItem("np_editor")==="1"; }catch(e){}
+  showDebug(d); showEditor(ed);
 })();
 
 // ===== Editor de código (ASM → .hex): compila en el navegador y se carga como un .hex =====
@@ -1301,7 +1349,6 @@ const ED_SAMPLE = [
   "    END",
   ""
 ].join("\n");
-let edOpen=false;
 const edSrcEl=document.getElementById("edSrc"), edStatusEl=document.getElementById("edStatus");
 try{ const saved=localStorage.getItem("np_src"); if(saved!=null) edSrcEl.value=saved; }catch(e){}
 if(!edSrcEl.value.trim()) edSrcEl.value=ED_SAMPLE;
@@ -1312,11 +1359,7 @@ edSrcEl.addEventListener("keydown",(e)=>{ if(e.key==="Tab"){ e.preventDefault();
   const s=edSrcEl.selectionStart, en=edSrcEl.selectionEnd;
   edSrcEl.value=edSrcEl.value.slice(0,s)+"    "+edSrcEl.value.slice(en);
   edSrcEl.selectionStart=edSrcEl.selectionEnd=s+4; edSave(); } });
-document.getElementById("edToggle").addEventListener("click", ()=>{
-  edOpen=!edOpen;
-  document.getElementById("edPanel").classList.toggle("hidden", !edOpen);
-  document.getElementById("edToggle").textContent=(edOpen?"▾":"▸")+" Editor de código (ASM)";
-});
+// (the editor lives in the right dock's "Código" block — toggled by showEditor in the Depurador section)
 document.getElementById("edDownload").addEventListener("click", ()=>{
   const blob=new Blob([edSrcEl.value], {type:"text/plain;charset=utf-8"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);

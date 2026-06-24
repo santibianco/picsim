@@ -36,6 +36,22 @@ classroom (codename *New Proteus*). **Shipped and live:**
   single-pane + no page-jump on mobile, **zero console errors**. Pure runtime change → no wasm
   rebuild/embed/verify-core needed. *Uncommitted.*
 
+- **2026-06-24 (dock: editor moved into the side panel)** — Follow-up to the revamp above
+  (`runtime/index.html` only, no core change). The **right dock now holds two independent, stackable blocks
+  — "Depurador" and "Código (ASM)"** — each with its own ✕ and its own **navbar toggle** (the app bar now has
+  *Código* and *Depurador* buttons instead of one *Panel* button). Both can be open **at the same time** (they
+  split the dock height, each ~half, resizable via the existing edge drag); closing both hides the dock. The ASM
+  editor was thus **moved out of the bottom of the stage into this dock**, and its textarea now **fills the block
+  height** (the old bottom panel made it cramped). Selecting a demo that carries `.asm` opens the Código block
+  (debugger stays as-is). State persists per block (`np_dock`, `np_editor`); defaults: debugger open on desktop,
+  editor closed (open it from the navbar). Verified live: both blocks open together, independent toggles + ✕,
+  editor full-height + compiles, demo-source auto-opens Código, no console errors. On phones (≤640px) the
+  navbar toggles are **icon-only** (button labels + the chip tag are hidden) so the bar isn't cramped.
+  Also, the Depurador navbar button now uses a **bug icon** (standard debugger symbol). And on mobile (≤920px)
+  the controls reflow **top→down: Placa · Archivos · board · Simulación · status** — done with `.rail{display:contents}`
+  so the rail's cards become direct grid items and `grid-template-areas` orders them around the board (desktop rail
+  layout unchanged). *Uncommitted.*
+
 - **2026-06-23 (editor: .asm open/save + example source)** — Editor (`runtime/index.html`) gains **Abrir
   .asm** / **Descargar .asm** (load a local `.asm` into the editor; save the editor to a `programa.asm`
   file via a Blob), and examples can now **carry their source**: a lab with an `asm` field populates the
