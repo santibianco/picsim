@@ -7,6 +7,17 @@ classroom (codename *New Proteus*). **Shipped and live:**
 
 ## Session log (newest first) — update this at the end of each session
 
+- **2026-06-25 (.hex load → navbar; dropped the Archivos card)** — `runtime/index.html` only, no core change.
+  The **"Cargar programa (.hex)"** button moved out of the rail's *Archivos* card and into the **navbar** as a
+  labelled icon button (`#loadHexBtn`, upload icon + "Cargar .hex"); on phones (≤640px) it's **icon-only with a
+  tooltip**, like the other navbar buttons. The rare **core (.wasm) loader** (`#wasmWrap`) also moved to the navbar
+  but is **hidden by default** and only appears when there's no embedded core (no-embed dev fallback). The whole
+  **Archivos card was removed**, so the rail is now just *Placa · Simulación · status* (reclaims the wasted space).
+  Both file `<input>`s are now `<label>`-wrapped in the navbar (native click → file picker; the existing
+  `#hexFile`/`#wasmFile` change handlers are unchanged), and drag-and-drop a `.hex` onto the board still works.
+  Mobile grid simplified (no more `archivos` row). Verified live: card gone, navbar **Cargar .hex** loads + runs a
+  `.hex`, core stays hidden with the embed, zero console errors. *Uncommitted.*
+
 - **2026-06-24 (UI revamp 2 — desktop/mobile usability)** — Reworked the runtime UI for legibility and
   to let students see more at once (`runtime/index.html` only — **CSS + HTML + JS, no core/wasm change**;
   the 82/83 tests + the embed are untouched, **no rebuild**). **(1) IDE-style layout.** The old top-to-bottom

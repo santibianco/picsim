@@ -111,7 +111,6 @@
   .tbtn.active .ic-play{ display:none; } /* …and swap to pause while running */
   .tbtn.active .ic-pause{ display:block; }
   .file-list{ display:flex; flex-direction:column; gap:8px; }
-  #wasmWrap{ display:block; }
   #wasmWrap.hidden{ display:none; }
   input[type=file]{ display:none; }
   .select, .input{ width:100%; background:var(--surface-2); color:var(--text);
@@ -315,11 +314,10 @@
   }
   @media (max-width: 920px){
     /* mobile order, top→down: Placa · Archivos · board · Simulación · status */
-    .layout{ grid-template-columns:1fr; grid-template-areas:"placa" "archivos" "stage" "sim" "status" "dock"; padding:14px; gap:14px; }
-    .layout.no-dock{ grid-template-columns:1fr; grid-template-areas:"placa" "archivos" "stage" "sim" "status"; }
+    .layout{ grid-template-columns:1fr; grid-template-areas:"placa" "stage" "sim" "status" "dock"; padding:14px; gap:14px; }
+    .layout.no-dock{ grid-template-columns:1fr; grid-template-areas:"placa" "stage" "sim" "status"; }
     .rail{ display:contents; }                 /* cards become direct grid items so they can be reordered around the board */
     #placaCard{ grid-area:placa; }
-    #archivosCard{ grid-area:archivos; }
     #simCard{ grid-area:sim; }
     #status{ grid-area:status; }
   }
@@ -353,6 +351,16 @@
       <span class="brand-tag">PIC16F628A</span>
     </div>
     <div class="appbar-spacer"></div>
+    <label id="wasmWrap" class="barbtn hidden" title="Cargar el núcleo (.wasm)" aria-label="Cargar núcleo">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3.5V6M15 3.5V6M9 18v2.5M15 18v2.5M3.5 9H6M3.5 15H6M18 9h2.5M18 15h2.5"/></svg>
+      <span class="barbtn-tx">Núcleo</span>
+      <input id="wasmFile" type="file" accept=".wasm" />
+    </label>
+    <label id="loadHexBtn" class="barbtn" title="Cargar un programa (.hex)" aria-label="Cargar programa .hex">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+      <span class="barbtn-tx">Cargar .hex</span>
+      <input id="hexFile" type="file" accept=".hex" />
+    </label>
     <button id="toggleEditor" class="barbtn" title="Mostrar u ocultar el editor de código" aria-label="Editor de código" aria-pressed="false">
       <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M9 8.5 5.5 12 9 15.5M15 8.5 18.5 12 15 15.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="barbtn-tx">Código</span>
@@ -402,14 +410,6 @@
           </div>
           <input id="clock" class="input" type="text" value="4 MHz" />
           <input id="clockRange" class="range" type="range" min="0" max="0" value="0" aria-label="Velocidad del reloj" />
-        </div>
-      </div>
-
-      <div class="card" id="archivosCard">
-        <div class="card-title">Archivos</div>
-        <div class="file-list">
-          <span id="wasmWrap"><label class="file btn btn-block">Cargar núcleo (.wasm)<input id="wasmFile" type="file" accept=".wasm" /></label></span>
-          <label class="file btn btn-block">Cargar programa (.hex)<input id="hexFile" type="file" accept=".hex" /></label>
         </div>
       </div>
 
@@ -1521,6 +1521,7 @@ window.addEventListener("DOMContentLoaded", async ()=>{
       setStatus("Núcleo listo ✓ — elegí una placa o ejemplo, o cargá un .hex.","ok"); return;
     }catch(err){ setStatus("Falló el núcleo incrustado: "+err,"err"); }
   }
+  document.getElementById("wasmWrap").classList.remove("hidden");   // no embed → expose the core (.wasm) loader
   setStatus("Cargá el núcleo (.wasm) para empezar — o incrustralo (ver runtime/README.md).");
 });
 
